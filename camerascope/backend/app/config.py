@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     session_cookie_name: str = "cs_session"
     # Cookies are Secure by default; set to false ONLY for plain-http local dev.
     cookie_secure: bool = True
+    # open: anyone can register | first_user_only: only the very first account (the admin)
+    # may self-register; admins create further accounts | closed: no self-registration.
+    # Use first_user_only (or closed) whenever the URL is reachable from the internet.
+    registration_mode: str = Field("open", pattern="^(open|first_user_only|closed)$")
     max_failed_logins: int = 5
     lockout_minutes: int = 15
 
@@ -62,6 +66,11 @@ class Settings(BaseSettings):
     provider_sync_interval_hours: int = 12
 
     cors_origins: str = ""
+
+    # "auto": WebRTC first, HLS fallback. "hls": never offer WebRTC - use this when the
+    # site is published through an HTTPS-only tunnel (Tailscale Funnel, Cloudflare
+    # Tunnel) where WebRTC's UDP/TCP media port is not reachable.
+    streaming_mode: str = Field("auto", pattern="^(auto|hls)$")
 
     @field_validator("credential_keys")
     @classmethod

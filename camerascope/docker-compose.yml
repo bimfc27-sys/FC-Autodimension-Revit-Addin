@@ -50,6 +50,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:?run scripts/generate-secrets.sh}
       CREDENTIAL_KEYS: ${CREDENTIAL_KEYS:?run scripts/generate-secrets.sh}
       COOKIE_SECURE: "true"
+      REGISTRATION_MODE: ${REGISTRATION_MODE:-first_user_only}
+      STREAMING_MODE: ${STREAMING_MODE:-auto}
       ALLOW_PRIVATE_NETWORK_TARGETS: ${ALLOW_PRIVATE_NETWORK_TARGETS:-true}
       NETGUARD_DENY_HOSTS: postgres,mediamtx,backend,frontend,caddy,localhost
       MEDIAMTX_API_URL: http://mediamtx:9997

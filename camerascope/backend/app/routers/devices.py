@@ -236,4 +236,5 @@ async def import_channels(device_id: uuid.UUID, body: ImportIn, request: Request
         created.append(cam)
     await audit(db, request, user.id, "device.import", str(d.id), channels=[c.config["channel"] for c in created])
     await db.commit()
+    svc.check_soon({c.id for c in created})
     return [await camera_out(db, c, user) for c in created]

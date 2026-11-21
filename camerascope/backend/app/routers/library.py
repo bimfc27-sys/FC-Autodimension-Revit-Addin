@@ -182,6 +182,14 @@ async def admin_sync(name: str, request: Request, db: AsyncSession = Depends(get
     return {"ok": ok, "imported": n, "message": msg}
 
 
+@router.get("/client-config")
+async def client_config():
+    """Non-secret settings the web app needs before login."""
+    from ..config import get_settings
+
+    return {"streaming_mode": get_settings().streaming_mode}
+
+
 @router.get("/health")
 async def health(db: AsyncSession = Depends(get_db)):
     await db.execute(select(1))

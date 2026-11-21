@@ -68,3 +68,21 @@ The cloud side ran the real backend (uvicorn), the real cloud MediaMTX (`mediamt
   - **Verify on your iPhone after deployment:** open a camera on Wi-Fi and on mobile data, switch HD/SD, and try full screen.
 - **Your real cameras and NVRs.** These tests used simulated cameras (standard RTSP/H.264 and an ONVIF responder). Real devices can differ: H.265-only streams, vendor ONVIF quirks, UDP-only RTSP. Run **Diagnostics** on each camera after adding it.
 - **A public HTTPS deployment.** This needs a server and a domain (see DEPLOYMENT.md). It was not available from the test environment.
+
+## 4. Free home-PC deployment (`deploy/windows`)
+
+See [FREE-DEPLOYMENT.md §8](FREE-DEPLOYMENT.md#8-what-was-verified-and-what-was-not). In summary:
+
+- **Verified:**
+  - the unmodified home compose stack behind an HTTPS proxy standing in for Tailscale Serve
+  - registration closed after the first (admin) account, with stranger registration returning 403
+  - the admin creating accounts
+  - a LAN camera added by IP, username and password playing over WebRTC
+  - HLS fallback and "HLS only" playing with the WebRTC port blocked (the public-tunnel case)
+  - a gateway on an isolated network connecting through the HTTPS entry point, with its camera playing
+- **Not verified:**
+  - running the PowerShell scripts (no Windows or PowerShell available)
+  - Tailscale or Cloudflare themselves
+  - Docker Desktop on Windows
+  - real iPhone Safari
+  - real cameras

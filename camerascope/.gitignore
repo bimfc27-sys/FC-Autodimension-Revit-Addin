@@ -6,3 +6,5 @@ node_modules/
 .next/
 frontend/out/
 *.log
+deploy/windows/backup-*.sql
+gateway/windows/*.log

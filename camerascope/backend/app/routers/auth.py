@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
 from ..db import get_db
-from ..deps import audit, client_ip, current_user
+from ..deps import admin_user, audit, client_ip, current_user
 from ..models import User
 from ..schemas import LoginIn, RegisterIn, UserOut
 from ..security import create_session_token, hash_password, needs_rehash, verify_password
@@ -34,9 +34,12 @@ def _set_cookie(response: Response, token: str, expires: datetime) -> None:
 async def register(body: RegisterIn, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     limiter.hit(f"register:{client_ip(request)}", 5, 3600)
     email = body.email.lower()
+    first_user = (await db.scalar(select(func.count()).select_from(User))) == 0
+    mode = get_settings().registration_mode
+    if not first_user and mode != "open":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Registration is closed. Ask the administrator for an account.")
     if await db.scalar(select(User).where(User.email == email)):
         raise HTTPException(status.HTTP_409_CONFLICT, "An account with this e-mail already exists")
-    first_user = (await db.scalar(select(func.count()).select_from(User))) == 0
     user = User(
         email=email,
         password_hash=hash_password(body.password),
@@ -100,6 +103,36 @@ async def logout_all(
     await audit(db, request, user.id, "auth.logout_all")
     await db.commit()
     response.delete_cookie(get_settings().session_cookie_name, path="/")
+
+
+@router.get("/registration")
+async def registration_status(db: AsyncSession = Depends(get_db)):
+    """Whether the sign-up form should be offered (no secrets)."""
+    first = (await db.scalar(select(func.count()).select_from(User))) == 0
+    return {"open": first or get_settings().registration_mode == "open", "first_user": first}
+
+
+class AdminCreateUser(RegisterIn):
+    is_admin: bool = False
+
+
+@router.get("/users", response_model=list[UserOut])
+async def list_users(db: AsyncSession = Depends(get_db), user: User = Depends(admin_user)):
+    return (await db.scalars(select(User).order_by(User.created_at))).all()
+
+
+@router.post("/users", response_model=UserOut, status_code=201)
+async def create_user(body: AdminCreateUser, request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(admin_user)):
+    """Administrators create accounts (used when self-registration is closed)."""
+    email = body.email.lower()
+    if await db.scalar(select(User).where(User.email == email)):
+        raise HTTPException(status.HTTP_409_CONFLICT, "An account with this e-mail already exists")
+    new = User(email=email, password_hash=hash_password(body.password), display_name=body.display_name.strip(), is_admin=body.is_admin)
+    db.add(new)
+    await db.flush()
+    await audit(db, request, user.id, "admin.user_create", email, is_admin=body.is_admin)
+    await db.commit()
+    return new
 
 
 @router.get("/me", response_model=UserOut)

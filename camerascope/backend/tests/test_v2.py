@@ -164,3 +164,30 @@ async def test_agent_policy(agent):
         await agent.stream_ensure(cfg, {"name": "prv-" + "a" * 32 + "-high", "source": "file:///etc/passwd"})
     res = await agent.tcp_check(cfg, {"targets": [{"id": "a", "host": "10.9.9.9", "port": 554}]})
     assert "refused" in res["a"]
+
+
+async def test_registration_first_user_only(client, monkeypatch):
+    from sqlalchemy import text
+
+    from app.config import get_settings
+    from app.db import sessionmaker
+
+    monkeypatch.setattr(get_settings(), "registration_mode", "first_user_only")
+    async with sessionmaker()() as db:  # start from an empty user table
+        await db.execute(text("TRUNCATE users CASCADE"))
+        await db.commit()
+    client.cookies.clear()
+    assert (await client.get("/api/auth/registration")).json() == {"open": True, "first_user": True}
+    admin = await make_user(client, "firstadmin")
+    assert (await client.get("/api/auth/me")).json()["is_admin"] is True
+    client.cookies.clear()
+    assert (await client.get("/api/auth/registration")).json()["open"] is False
+    r = await client.post("/api/auth/register", json={"email": "stranger@example.com", "password": "Sup3r-Secret-pass", "display_name": "x"})
+    assert r.status_code == 403
+    # the admin creates a family account; non-admins cannot
+    await _login(client, admin)
+    r = await client.post("/api/auth/users", json={"email": "family@example.com", "password": "Family-Pass-123", "display_name": "Family"})
+    assert r.status_code == 201 and r.json()["is_admin"] is False
+    client.cookies.clear()
+    assert (await client.post("/api/auth/login", json={"email": "family@example.com", "password": "Family-Pass-123"})).status_code == 200
+    assert (await client.post("/api/auth/users", json={"email": "x2@example.com", "password": "Family-Pass-123", "display_name": "x"})).status_code == 403

@@ -1,0 +1,28 @@
+# Plain HTTP on 127.0.0.1:8080 only. HTTPS is terminated by Tailscale Serve/Funnel
+# (or cloudflared) running on the same PC.
+{
+	auto_https off
+	admin off
+	servers {
+		# keep the real client address forwarded by the local tunnel process
+		trusted_proxies static private_ranges
+	}
+}
+
+:80 {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+	handle /api/* {
+		reverse_proxy backend:8000 {
+			flush_interval -1
+		}
+	}
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

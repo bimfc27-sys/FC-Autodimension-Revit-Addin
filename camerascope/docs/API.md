@@ -31,6 +31,8 @@ The base path is `/api`. All bodies are JSON unless noted otherwise. The interac
 | POST | `/auth/login` | `{email, password}` | Signs in. After 5 failures the account is locked for 15 minutes. The error message is the same whether or not the e-mail exists. |
 | POST | `/auth/logout` | – | Clears the session cookie. |
 | POST | `/auth/logout-all` | – | Revokes **all** of the user's sessions by incrementing the token version. |
+| GET | `/auth/registration` | – | Returns `{open, first_user}`, which tells the UI whether to offer sign-up. |
+| GET / POST | `/auth/users` | `{email, password, display_name, is_admin}` | **Admin only.** List or create accounts. Used when `REGISTRATION_MODE` isn't `open`. |
 | GET | `/auth/me` | – | Returns the current user: `{id, email, display_name, is_admin}`. |
 
 ## Public cameras

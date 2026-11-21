@@ -441,11 +441,14 @@ def _check_target(obj) -> tuple[str, int]:
     return obj.host, obj.port or 80
 
 
-async def refresh_reachability(db: AsyncSession) -> None:
+async def refresh_reachability(db: AsyncSession, camera_ids: set[uuid.UUID] | None = None) -> None:
     """Periodic, credential-free TCP checks from the place each camera is reached from."""
     now = datetime.now(timezone.utc)
-    cams = (await db.scalars(select(PrivateCamera))).all()
-    devs = (await db.scalars(select(Device))).all()
+    q = select(PrivateCamera)
+    if camera_ids is not None:
+        q = q.where(PrivateCamera.id.in_(camera_ids))
+    cams = (await db.scalars(q)).all()
+    devs = [] if camera_ids is not None else (await db.scalars(select(Device))).all()
     by_gw: dict[uuid.UUID | None, list] = {}
     for o in [*cams, *devs]:
         by_gw.setdefault(o.gateway_id, []).append(o)
@@ -478,6 +481,25 @@ def _apply(obj, reachable: bool | None, now: datetime) -> None:
             obj.status = "gateway_offline" if obj.gateway_id else "unknown"
         elif obj.status != "auth_failed":
             obj.status = "online" if reachable else "offline"
+
+
+def check_soon(camera_ids: set[uuid.UUID]) -> None:
+    """Measure reachability of newly added cameras right away (in the background)."""
+    from ..db import sessionmaker
+
+    async def run():
+        try:
+            async with sessionmaker()() as db:
+                await refresh_reachability(db, camera_ids)
+        except Exception:
+            pass
+
+    task = asyncio.create_task(run())
+    _background.add(task)
+    task.add_done_callback(_background.discard)
+
+
+_background: set[asyncio.Task] = set()
 
 
 async def status_monitor(stop: asyncio.Event) -> None:

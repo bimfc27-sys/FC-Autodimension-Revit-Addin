@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 
 export default function AuthForm({ mode }: { mode: "login" | "register" }) {
@@ -12,6 +12,11 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [regOpen, setRegOpen] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    api<{ open: boolean }>("/api/auth/registration").then((r) => setRegOpen(r.open)).catch(() => setRegOpen(null));
+  }, []);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -62,13 +67,14 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           />
           {mode === "register" && <span className="small">At least 12 characters mixing 3 of: lower, upper, digits, symbols.</span>}
         </label>
+        {mode === "register" && regOpen === false && <div className="notice small">Self-registration is closed on this server. Ask the administrator to create your account.</div>}
         {error && <div className="error">{error}</div>}
         <button className="btn primary" disabled={busy}>
           {busy ? "Please wait…" : mode === "login" ? "Sign in" : "Create account"}
         </button>
         <div className="small muted">
           {mode === "login" ? (
-            <>No account? <Link href="/register">Create one</Link></>
+            regOpen === false ? <>Accounts are created by the administrator.</> : <>No account? <Link href="/register">Create one</Link></>
           ) : (
             <>Already registered? <Link href="/login">Sign in</Link></>
           )}

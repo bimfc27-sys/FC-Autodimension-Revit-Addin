@@ -11,6 +11,7 @@ from fastapi.responses import Response
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import get_settings
 from ..db import get_db
 from ..deps import audit, current_user
 from ..models import Device, Gateway, PrivateCamera, Site, SiteMember, User
@@ -197,6 +198,7 @@ async def create_camera(body: PrivateCameraIn, request: Request, db: AsyncSessio
     await audit(db, request, user.id, "camera.create", str(cam.id), protocol=cam.protocol, basis=cam.authorization_basis,
                 gateway=str(cam.gateway_id) if cam.gateway_id else None)
     await db.commit()
+    svc.check_soon({cam.id})
     return await camera_out(db, cam, user)
 
 
@@ -335,7 +337,7 @@ async def playback(
         pb.qualities = [QualityOption(id=k, label={"high": "High (main stream)", "low": "Low (sub stream)"}[k]) for k in sources]
         name = await svc.gateway_path_for_private(db, cam, quality)
         pb.quality = name.rsplit("-", 1)[1]
-        pb.whep_url = f"/api/media/{name}/whep"
+        pb.whep_url = f"/api/media/{name}/whep" if get_settings().streaming_mode == "auto" else None
         pb.hls_url = f"/api/media/{name}/hls/index.m3u8"
     await audit(db, request, user.id, "camera.view", str(cam.id), quality=pb.quality, shared=cam.owner_id != user.id)
     await db.commit()

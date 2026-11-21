@@ -15,6 +15,8 @@ export interface PlayerHandle {
 
 interface Props {
   playback: Playback;
+  /** Skip WebRTC (per-device setting or tunnel deployments). */
+  preferHls?: boolean;
   hlsLevel: number; // -1 = auto
   onStatus: (s: PlayerStatus, detail?: string) => void;
   onLevels?: (levels: { index: number; label: string }[]) => void;
@@ -52,6 +54,10 @@ async function startWhep(url: string, video: HTMLVideoElement, onFail: (msg: str
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === "failed") onFail("WebRTC connection failed");
   };
+  pc.oniceconnectionstatechange = () => {
+    if (pc.iceConnectionState === "failed") onFail("WebRTC media port unreachable");
+  };
+
   await pc.setLocalDescription(await pc.createOffer());
   await waitIce(pc, 1500);
   const res = await fetch(url, {
@@ -66,13 +72,20 @@ async function startWhep(url: string, video: HTMLVideoElement, onFail: (msg: str
   }
   const location = res.headers.get("Location");
   await pc.setRemoteDescription({ type: "answer", sdp: await res.text() });
+  // Behind HTTPS-only tunnels the media port is unreachable: give up quickly
+  // instead of waiting for the browser's ICE timeout.
+  setTimeout(() => {
+    if (pc.signalingState !== "closed" && !["connected", "completed"].includes(pc.iceConnectionState)) {
+      onFail("WebRTC media port unreachable");
+    }
+  }, 5000);
   return () => {
     pc.close();
     if (location) fetch(location, { method: "DELETE", credentials: "same-origin" }).catch(() => {});
   };
 }
 
-const Player = forwardRef<PlayerHandle, Props>(function Player({ playback, hlsLevel, onStatus, onLevels, onTransport }, ref) {
+const Player = forwardRef<PlayerHandle, Props>(function Player({ playback, preferHls, hlsLevel, onStatus, onLevels, onTransport }, ref) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -152,7 +165,7 @@ const Player = forwardRef<PlayerHandle, Props>(function Player({ playback, hlsLe
     };
 
     (async () => {
-      if (playback.mode === "gateway" && playback.whep_url && typeof RTCPeerConnection !== "undefined") {
+      if (playback.mode === "gateway" && playback.whep_url && !preferHls && typeof RTCPeerConnection !== "undefined") {
         try {
           let failed = false;
           const fallback = (msg: string) => {

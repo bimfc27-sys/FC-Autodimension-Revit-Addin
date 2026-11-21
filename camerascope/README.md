@@ -9,7 +9,8 @@ CameraScope is a web app for watching **all the IP cameras and DVR/NVR channels 
 - **Buildings.** Cameras explicitly shared with people as viewers or managers.
 - **Groups**, **favorites**, a **mobile-first** UI, automatic stream reconnection, Alembic migrations, and an end-to-end streaming test lab.
 
-→ **Deploy it:** [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) · **How it was tested:** [docs/TESTING.md](docs/TESTING.md)
+→ **Free deployment on your own Windows PC + Tailscale (no VPS, domain or extra hardware):** [docs/FREE-DEPLOYMENT.md](docs/FREE-DEPLOYMENT.md)
+→ **Server deployment:** [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) · **How it was tested:** [docs/TESTING.md](docs/TESTING.md)
 
 It keeps two kinds of camera strictly apart:
 
@@ -184,6 +185,8 @@ The backend test suite (35 tests, run against the real Alembic migrations) cover
 | `CALTRANS_DISTRICTS` | `3,4,7,11,12` | Which Caltrans districts to import. |
 | `WINDY_API_KEY` | empty | Enables the Windy webcams provider. |
 | `PROVIDER_SYNC_INTERVAL_HOURS` | `12` | How often bulk providers are refreshed. |
+| `REGISTRATION_MODE` | `open` | `open`, `first_user_only` or `closed`. **Use `first_user_only` whenever the URL is reachable from the internet.** The home-PC deployment defaults to it. |
+| `STREAMING_MODE` | `auto` | `auto` (WebRTC with HLS fallback) or `hls` (never offer WebRTC, for HTTPS-only tunnels). |
 | `COOKIE_SECURE` | `true` | Set to `false` only for local plain-HTTP development. |
 | `SITE_ADDRESS` / `PUBLIC_HOST` | `localhost` | Caddy hostname / the WebRTC address browsers use. |
 
@@ -205,7 +208,8 @@ camerascope/
 │       └── services/   netguard (SSRF), onvif, rtsp, mediamtx, sources (vendor presets), providers/
 ├── frontend/           Next.js app (src/app, src/components, src/lib), Dockerfile
 ├── database/           schema.sql
-├── gateway/            Local Camera Gateway: agent/ (Python), mediamtx.yml, docker-compose.yml
+├── deploy/windows/     free home-PC deployment: compose file + PowerShell install/start/stop/update scripts
+├── gateway/            Local Camera Gateway: agent/ (Python), mediamtx.yml, docker-compose.yml, windows/ (native installer)
 ├── mediamtx/           cloud MediaMTX config + demo camera config
 ├── docs/               API.md, SECURITY.md
 ├── scripts/            generate-secrets.sh

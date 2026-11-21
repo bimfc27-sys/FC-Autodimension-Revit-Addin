@@ -2,10 +2,11 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { Transport, getTransport, setTransport } from "@/lib/prefs";
 import type { CameraGroup, Device, DeviceChannel, Enrollment, Gateway, PrivateCamera, Site, SiteMember } from "@/lib/types";
 import { STATUS_TEXT } from "./CamerasPanel";
 
-type Sub = "gateways" | "recorders" | "buildings" | "groups";
+type Sub = "gateways" | "recorders" | "buildings" | "groups" | "settings";
 
 interface Props {
   gateways: Gateway[];
@@ -438,13 +439,67 @@ function Groups({ groups, reload }: { groups: CameraGroup[]; reload: () => void 
   );
 }
 
+function Accounts() {
+  const [users, setUsers] = useState<{ id: string; email: string; display_name: string; is_admin: boolean }[] | null>(null);
+  const [f, setF] = useState({ email: "", display_name: "", password: "" });
+  const [msg, setMsg] = useState<string | null>(null);
+  const load = () => api<typeof users>("/api/auth/users").then(setUsers).catch(() => setUsers(null));
+  useEffect(() => { load(); }, []);
+  if (users === null) return null; // not an administrator
+  return (
+    <div className="card">
+      <strong>Accounts (administrator)</strong>
+      <div className="small muted">Create logins for family or colleagues, then share cameras with them through a Building.</div>
+      {users.map((u) => <div key={u.id} className="small">{u.display_name} · {u.email}{u.is_admin ? " · admin" : ""}</div>)}
+      <form style={{ display: "flex", flexDirection: "column", gap: 6 }} onSubmit={async (e) => {
+        e.preventDefault();
+        setMsg(null);
+        try { await api("/api/auth/users", { method: "POST", json: f }); setF({ email: "", display_name: "", password: "" }); load(); setMsg("Account created."); }
+        catch (err) { setMsg((err as Error).message); }
+      }}>
+        <input className="input" placeholder="Name" value={f.display_name} onChange={(e) => setF({ ...f, display_name: e.target.value })} required />
+        <input className="input" type="email" placeholder="E-mail" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} required />
+        <input className="input" type="password" placeholder="Initial password (12+ chars)" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} required minLength={12} autoComplete="new-password" />
+        <button className="btn primary">Create account</button>
+        {msg && <div className="small">{msg}</div>}
+      </form>
+    </div>
+  );
+}
+
+function Settings() {
+  const [t, setT] = useState<Transport>("auto");
+  const [server, setServer] = useState<string>("");
+  useEffect(() => {
+    setT(getTransport());
+    api<{ streaming_mode: string }>("/api/client-config").then((c) => setServer(c.streaming_mode)).catch(() => {});
+  }, []);
+  return (
+    <>
+      <div className="card">
+        <strong>Video transport on this device</strong>
+        <select className="select" value={t} onChange={(e) => { setT(e.target.value as Transport); setTransport(e.target.value as Transport); }} aria-label="Video transport">
+          <option value="auto">Automatic – WebRTC (lowest delay), HLS fallback</option>
+          <option value="hls">HLS only – for public tunnel URLs (Tailscale Funnel / Cloudflare)</option>
+        </select>
+        <div className="small muted">
+          Choose “HLS only” when you open CameraScope through a public tunnel without the Tailscale app: WebRTC media can&apos;t pass
+          through HTTPS-only tunnels. Applies to newly opened tiles.
+        </div>
+        {server === "hls" && <div className="notice small">This server is configured for HLS-only streaming (STREAMING_MODE=hls).</div>}
+      </div>
+      <Accounts />
+    </>
+  );
+}
+
 export default function ManagePanel(p: Props) {
   const [sub, setSub] = useState<Sub>("gateways");
   const offline = p.gateways.filter((g) => !g.online && g.status !== "pending").length;
   return (
     <>
       <div className="subtabs">
-        {([["gateways", `Gateways${offline ? ` ⚠${offline}` : ""}`], ["recorders", "DVR / NVR"], ["buildings", "Buildings"], ["groups", "Groups"]] as [Sub, string][]).map(([id, label]) => (
+        {([["gateways", `Gateways${offline ? ` ⚠${offline}` : ""}`], ["recorders", "DVR / NVR"], ["buildings", "Buildings"], ["groups", "Groups"], ["settings", "Settings"]] as [Sub, string][]).map(([id, label]) => (
           <button key={id} className={`btn sm ${sub === id ? "primary" : ""}`} onClick={() => setSub(id)}>{label}</button>
         ))}
         <button className="btn sm" onClick={p.onAddCamera}>+ Camera</button>
@@ -453,6 +508,7 @@ export default function ManagePanel(p: Props) {
       {sub === "recorders" && <Recorders devices={p.devices} gateways={p.gateways} sites={p.sites} reload={p.reload} />}
       {sub === "buildings" && <Buildings sites={p.sites} cameras={p.cameras} reload={p.reload} />}
       {sub === "groups" && <Groups groups={p.groups} reload={p.reload} />}
+      {sub === "settings" && <Settings />}
     </>
   );
 }

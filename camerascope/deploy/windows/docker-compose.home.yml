@@ -1,0 +1,96 @@
+# CameraScope on your own Windows PC (Docker Desktop) - free deployment.
+# Managed by install.ps1 / start.ps1 / stop.ps1 - see docs/FREE-DEPLOYMENT.md.
+#
+# * Nothing is exposed to your LAN: the web entry point listens on 127.0.0.1:8080
+#   and Tailscale Serve/Funnel provides the HTTPS URL (https://<pc>.<tailnet>.ts.net).
+# * The PC itself reaches the cameras/NVRs on its own network directly.
+# * Cameras on OTHER networks connect through a Local Camera Gateway running on an
+#   existing PC at that site (gateway/windows), or a router VPN.
+
+name: camerascope
+
+services:
+  postgres:
+    image: postgres:16.6-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: camerascope
+      POSTGRES_USER: camerascope
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run install.ps1}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U camerascope -d camerascope"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks: [data]
+
+  mediamtx:
+    image: bluenviron/mediamtx:1.9.3
+    restart: unless-stopped
+    environment:
+      # Tailscale IP of this PC: the address the iPhone (in your tailnet) uses for WebRTC video.
+      MTX_WEBRTCADDITIONALHOSTS: ${PUBLIC_HOST:?run install.ps1}
+    volumes:
+      - ../../mediamtx/mediamtx.yml:/mediamtx.yml:ro
+    ports:
+      # WebRTC media. install.ps1 adds a Windows Firewall rule allowing it ONLY from
+      # your tailnet (100.64.0.0/10). Useless without a session negotiated via the app.
+      - "8189:8189/udp"
+      - "8189:8189/tcp"
+    networks: [media, cameras]
+
+  backend:
+    build: ../../backend
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      mediamtx: { condition: service_started }
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql+asyncpg://camerascope:${POSTGRES_PASSWORD}@postgres:5432/camerascope
+      JWT_SECRET: ${JWT_SECRET:?run install.ps1}
+      CREDENTIAL_KEYS: ${CREDENTIAL_KEYS:?run install.ps1}
+      COOKIE_SECURE: "true"                      # browsers reach the app over Tailscale HTTPS
+      REGISTRATION_MODE: ${REGISTRATION_MODE:-first_user_only}
+      STREAMING_MODE: ${STREAMING_MODE:-auto}
+      # The PC is on your home network: allow cameras with LAN addresses.
+      ALLOW_PRIVATE_NETWORK_TARGETS: "true"
+      NETGUARD_DENY_HOSTS: postgres,mediamtx,backend,frontend,caddy,localhost,host.docker.internal,gateway.docker.internal
+      MEDIAMTX_API_URL: http://mediamtx:9997
+      MEDIAMTX_HLS_URL: http://mediamtx:8888
+      MEDIAMTX_WEBRTC_URL: http://mediamtx:8889
+      TUNNEL_BIND_HOST: 0.0.0.0
+      TUNNEL_ALLOWED_PEERS: mediamtx
+      BACKEND_INTERNAL_HOST: backend
+      PROVIDERS_ENABLED: ${PROVIDERS_ENABLED:-seed,caltrans,nyc_dot,osm}
+    networks: [data, media, web, cameras]
+
+  frontend:
+    build:
+      context: ../../frontend
+      args:
+        BACKEND_URL: http://backend:8000
+    restart: unless-stopped
+    depends_on: [backend]
+    networks: [web]
+
+  web:
+    image: caddy:2.8.4-alpine
+    restart: unless-stopped
+    depends_on: [frontend, backend]
+    ports:
+      - "127.0.0.1:8080:80"   # localhost only - Tailscale Serve/Funnel or cloudflared connect here
+    volumes:
+      - ./Caddyfile.home:/etc/caddy/Caddyfile:ro
+    networks: [web]
+
+networks:
+  data: { internal: true }
+  media: { internal: true }
+  web: {}
+  cameras: {}   # outbound: cameras/NVRs on your LAN + public camera providers
+
+volumes:
+  pgdata:

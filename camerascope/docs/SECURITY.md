@@ -131,7 +131,16 @@ Remaining risk: the hop between the gateway (or the cloud, for Direct/VPN camera
 - ONVIF probing returns profile names, tokens and resolutions only. The server resolves the stream URIs itself and stores them server-side. API responses strip `resolved_*` keys from the camera configuration.
 - The browser tests scan every `/api/*` response and every console message for camera passwords, `rtsp://` and the relay secret. They found none.
 
-## 12. Operator checklist
+## 12. Internet-facing tunnels (free home-PC deployment)
+
+- `REGISTRATION_MODE`:
+  - `first_user_only` (the default for `deploy/windows`): only the first account self-registers. Further accounts are created by an administrator (`POST /api/auth/users`, or *Manage → Settings → Accounts*).
+  - `closed`: no self-registration at all.
+- Without this, anyone who found a public Funnel URL could register. With `ALLOW_PRIVATE_NETWORK_TARGETS=true` they could then point "cameras" at hosts on your LAN.
+- The web entry point binds to `127.0.0.1:8080`. Only the local Tailscale/cloudflared process can reach it. The WebRTC port is firewalled to the tailnet range.
+- Private Tailscale Serve mode exposes nothing to the internet. Prefer it over Funnel.
+
+## 13. Operator checklist
 
 - [ ] Run `scripts/generate-secrets.sh`. Never reuse the example values. Back up `CREDENTIAL_KEYS` securely.
 - [ ] Set `SITE_ADDRESS` to a real domain so a trusted certificate is issued.
@@ -142,6 +151,6 @@ Remaining risk: the hop between the gateway (or the cloud, for Direct/VPN camera
 - [ ] Review `audit_log` regularly for signs of misuse, such as many ONVIF probes or repeated `auth_failed` cameras.
 - [ ] Publish an acceptable-use policy saying users may add only cameras they own or are authorised to access, and act on abuse reports.
 
-## 13. Reporting vulnerabilities
+## 14. Reporting vulnerabilities
 
 Please report security issues privately to the maintainers rather than opening a public issue. Include reproduction steps. We aim to acknowledge reports within 72 hours.

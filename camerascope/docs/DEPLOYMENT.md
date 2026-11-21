@@ -1,5 +1,7 @@
 # Deploying CameraScope
 
+> **No server or domain?** See [FREE-DEPLOYMENT.md](FREE-DEPLOYMENT.md) to run CameraScope for free on your own Windows PC with Tailscale. This page covers deploying on a VPS with your own domain.
+
 This guide puts CameraScope on a public HTTPS domain and connects your camera networks to it.
 
 ## 1. What you need

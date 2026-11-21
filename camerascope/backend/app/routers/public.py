@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import get_settings
 from ..db import get_db
 from ..deps import current_user, optional_user
 from ..models import Favorite, PublicCamera, User
@@ -125,7 +126,7 @@ async def playback(camera_id: uuid.UUID, db: AsyncSession = Depends(get_db), use
     elif cam.stream_type == "gateway":
         name = await svc.gateway_path_for_public(cam)
         pb.mode = "gateway"
-        pb.whep_url = f"/api/media/{name}/whep"
+        pb.whep_url = f"/api/media/{name}/whep" if get_settings().streaming_mode == "auto" else None
         pb.hls_url = f"/api/media/{name}/hls/index.m3u8"
         pb.qualities = [QualityOption(id="high", label="Source")]
     elif cam.stream_type == "mjpeg" and cam.stream_url:

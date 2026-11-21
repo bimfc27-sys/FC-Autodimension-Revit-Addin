@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api } from "@/lib/api";
+import { getTransport } from "@/lib/prefs";
 import type { AnyCamera, Playback } from "@/lib/types";
 import Player, { PlayerHandle, PlayerStatus } from "./Player";
 
@@ -165,6 +166,7 @@ export default function CameraTile({ camera, onClose, onDiagnose, onExpand }: Pr
             key={`${playback.whep_url}|${playback.hls_url}|${playback.image_url}|${retry}`}
             ref={playerRef}
             playback={playback}
+            preferHls={getTransport() === "hls"}
             hlsLevel={hlsLevel}
             onStatus={onStatus}
             onLevels={setLevels}
