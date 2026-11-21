@@ -1,7 +1,10 @@
-# CameraScope - production-style stack.
-#   cp .env.example .env && ./scripts/generate-secrets.sh   (fills secrets)
+# CameraScope cloud - production stack (see docs/DEPLOYMENT.md).
+#   ./scripts/generate-secrets.sh        (creates .env with random secrets)
 #   docker compose up -d --build
 #   docker compose --profile demo up -d --build   (adds a simulated IP camera)
+#
+# Camera networks connect through Local Camera Gateways (gateway/ folder),
+# which dial OUT to this stack over wss:// - no inbound ports at the cameras.
 
 name: camerascope
 
@@ -15,7 +18,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U camerascope -d camerascope"]
       interval: 5s
@@ -32,7 +34,8 @@ services:
     volumes:
       - ./mediamtx/mediamtx.yml:/mediamtx.yml:ro
     ports:
-      - "8189:8189/udp"   # WebRTC media only; HTTP signalling goes through the backend
+      - "8189:8189/udp"   # WebRTC media (UDP); HTTP signalling goes through the backend
+      - "8189:8189/tcp"   # WebRTC media over TCP for mobile networks that block UDP
     networks: [media, cameras]
 
   backend:
@@ -52,9 +55,15 @@ services:
       MEDIAMTX_API_URL: http://mediamtx:9997
       MEDIAMTX_HLS_URL: http://mediamtx:8888
       MEDIAMTX_WEBRTC_URL: http://mediamtx:8889
+      # Gateway tunnel forwarders: listen on the internal network, only the
+      # cloud MediaMTX may connect (these ports are never published).
+      TUNNEL_BIND_HOST: 0.0.0.0
+      TUNNEL_ALLOWED_PEERS: mediamtx
+      BACKEND_INTERNAL_HOST: backend
       PROVIDERS_ENABLED: ${PROVIDERS_ENABLED:-seed,caltrans,nyc_dot,osm}
       CALTRANS_DISTRICTS: ${CALTRANS_DISTRICTS:-3,4,7,11,12}
       WINDY_API_KEY: ${WINDY_API_KEY:-}
+    # Gateway tunnels are held in this process: run exactly one backend replica/worker.
     networks: [data, media, web, cameras]
 
   frontend:
@@ -72,6 +81,7 @@ services:
     depends_on: [frontend, backend]
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+      CADDY_TLS: ${CADDY_TLS:-}
     ports:
       - "80:80"
       - "443:443"

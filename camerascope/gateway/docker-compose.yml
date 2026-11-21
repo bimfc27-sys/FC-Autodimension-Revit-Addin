@@ -1,0 +1,39 @@
+# CameraScope Local Camera Gateway - run ONE per camera network you are authorised to use.
+#   cp .env.example .env   # set CLOUD_URL, ENROLLMENT_CODE, ALLOWED_SUBNETS
+#   ./generate-relay-secret.sh
+#   docker compose up -d
+#
+# Nothing here is published to the network: the agent dials OUT to CameraScope
+# over TLS, and MediaMTX is only reachable by the agent on the private
+# Docker network.
+
+name: camerascope-gateway
+
+services:
+  agent:
+    build: ./agent
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MEDIAMTX_API: http://mediamtx:9997
+      MEDIAMTX_RTSP: mediamtx:8554
+      AUTH_LISTEN: 0.0.0.0:9123
+      STATE_DIR: /data
+    volumes:
+      - gateway-state:/data
+    networks: [gateway]
+
+  mediamtx:
+    image: bluenviron/mediamtx:1.9.3
+    restart: unless-stopped
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
+    networks: [gateway]
+
+networks:
+  # Regular bridge network: containers reach the camera LAN and the internet
+  # through the host (outbound only). No ports are published.
+  gateway: {}
+
+volumes:
+  gateway-state:

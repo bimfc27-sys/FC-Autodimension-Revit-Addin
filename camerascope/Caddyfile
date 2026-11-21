@@ -1,6 +1,9 @@
 # HTTPS termination. SITE_ADDRESS=localhost uses Caddy's internal CA;
 # a real domain name gets a Let's Encrypt certificate automatically.
 {$SITE_ADDRESS:localhost} {
+	# Empty (default): automatic Let's Encrypt for public names, internal CA for localhost/IPs.
+	# CADDY_TLS="tls internal" forces the internal CA (private-network / VPN-only installs, testing).
+	{$CADDY_TLS:}
 	encode zstd gzip
 
 	header {

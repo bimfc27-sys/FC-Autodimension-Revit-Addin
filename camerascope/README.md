@@ -1,6 +1,15 @@
 # CameraScope
 
-CameraScope is a web app for finding public cameras near you and watching cameras you own, on one map-based dashboard.
+CameraScope is a web app for watching **all the IP cameras and DVR/NVR channels you own or are authorised to view, in one dashboard** on your phone or desktop, without the manufacturers' apps. It also finds public traffic cameras and webcams near you.
+
+**Version 2 adds:**
+
+- **Local Camera Gateways.** One per camera network. They connect out over an encrypted tunnel, so no ports are opened on the camera network, and they reconnect automatically.
+- **DVR/NVR channel discovery** through ONVIF, Hikvision ISAPI and the Dahua/Amcrest APIs.
+- **Buildings.** Cameras explicitly shared with people as viewers or managers.
+- **Groups**, **favorites**, a **mobile-first** UI, automatic stream reconnection, Alembic migrations, and an end-to-end streaming test lab.
+
+→ **Deploy it:** [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) · **How it was tested:** [docs/TESTING.md](docs/TESTING.md)
 
 It keeps two kinds of camera strictly apart:
 
@@ -38,20 +47,40 @@ CameraScope **never** scans for exposed devices, guesses default passwords, expl
 ## Architecture
 
 ```
-Browser ──HTTPS──► Caddy ──► Next.js frontend (React/TypeScript)
-                     │
-                     └─/api/*──► FastAPI backend ──► PostgreSQL
-                                   │   ▲
-                         control API│   │ authenticated HLS/WHEP proxy (/api/media/*)
-                                   ▼   │
-                                 MediaMTX gateway ──RTSP/RTSPS/WHEP/HLS──► cameras
-Browser ◄──────── WebRTC media (UDP 8189, DTLS-SRTP) ────────┘
+ Phone / desktop browser (any network: home Wi-Fi, LTE, office…)
+        │ HTTPS (Caddy, Let's Encrypt)                ▲ WebRTC media (DTLS-SRTP, UDP/TCP 8189) or HLS over 443
+        ▼                                             │
+ ┌──────────────────────────── CameraScope cloud ─────┴──────────────────────┐
+ │ Next.js UI   FastAPI backend ──► PostgreSQL                               │
+ │              │  auth, RBAC, audit, encrypted credentials                  │
+ │              │  /api/media/* authenticated HLS/WHEP proxy                 │
+ │              │  tunnel hub + forwarders ◄────┐                            │
+ │              ▼                               │                            │
+ │        Cloud MediaMTX ── pulls ──────────────┘ (through the tunnel)       │
+ │              └── or pulls DIRECT cameras (public address / VPN route)     │
+ └──────────────────────────────▲──────────────────────────────────────────── ┘
+                                │ outbound wss:// tunnel (TLS, gateway token)
+        ┌───────────────────────┴─────────┐        ┌──────────────────────────┐
+        │ Gateway "Home Wi-Fi"            │        │ Gateway "Warehouse"      │
+        │ agent (allow-list enforcement)  │  ...   │ agent + MediaMTX         │
+        │ MediaMTX pulls cameras on LAN   │        │ NVR (ONVIF/ISAPI) CH1..n │
+        └─ 192.168.1.0/24: IP cameras ────┘        └─ 10.20.0.0/24 ───────────┘
 ```
+
+**How each camera is reached.** You choose this explicitly for every camera. CameraScope never guesses from location.
+
+| Configuration | Path |
+|---|---|
+| Cameras on the same Wi-Fi as your phone | That network's **gateway**. The phone always uses your HTTPS domain, so it works the same at home or away. |
+| Authorised cameras on other networks | One **gateway per network**, each with its own allow-list. |
+| DVR/NVR channels | The recorder's network **gateway**. Channels are discovered through ONVIF or vendor APIs, or registered manually. |
+| Public address or VPN-routed cameras | **Direct / VPN**: the cloud MediaMTX pulls them itself, through the SSRF guard. |
 
 - **Frontend** (`frontend/`): Next.js 14 (app router), React 18, TypeScript, Leaflet and hls.js.
 - **Backend** (`backend/`): Python FastAPI with async SQLAlchemy and asyncpg, argon2id password hashing, JWT sessions in HttpOnly cookies, and AES-GCM encryption for camera credentials.
-- **Gateway** (`mediamtx/`): [MediaMTX](https://github.com/bluenviron/mediamtx). It pulls camera streams only while someone is watching and repackages them for the browser without transcoding. Its HTTP ports are never published. Every HLS segment and WHEP negotiation goes through the backend, which checks ownership.
-- **Database** (`database/schema.sql`): PostgreSQL 16. The backend also creates the tables on startup.
+- **Local Camera Gateway** (`gateway/`): a Python agent plus MediaMTX in Docker. It enrolls with a one-time code, keeps an outbound TLS WebSocket tunnel that reconnects with backoff, and enforces `ALLOWED_SUBNETS` and `ALLOWED_PORTS` locally. It never accepts inbound connections.
+- **Cloud gateway** (`mediamtx/`): [MediaMTX](https://github.com/bluenviron/mediamtx). It pulls camera streams only while someone is watching and repackages them for the browser without transcoding. Its HTTP ports are never published. Every HLS segment and WHEP negotiation goes through the backend, which checks ownership.
+- **Database**: PostgreSQL 16. **Alembic migrations** (`backend/migrations`) run automatically at startup. `database/schema.sql` is a generated reference copy.
 
 ## Installation
 
@@ -129,7 +158,7 @@ DATABASE_URL=postgresql+asyncpg://camerascope:<pw>@localhost:5432/camerascope_te
 cd ../frontend && npm run typecheck && npm run build
 ```
 
-The backend test suite (28 tests) covers:
+The backend test suite (35 tests, run against the real Alembic migrations) covers:
 
 - registration, login and lockout
 - CSRF rejection of cross-site requests
@@ -138,6 +167,10 @@ The backend test suite (28 tests) covers:
 - owner isolation of private cameras and media paths
 - vendor URL presets and ONVIF host pinning
 - the RTSP digest handshake against a fake camera, including the rule that each run makes exactly one authentication attempt and the camera locks after repeated failures
+- building sharing (viewer vs manager, revocation), groups and favorites
+- one-time gateway enrollment, and gateway ownership
+- the agent's subnet and port allow-list
+- NVR channel grouping
 
 ## Configuration
 
@@ -156,6 +189,8 @@ The backend test suite (28 tests) covers:
 
 ## Documentation
 
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): public HTTPS deployment, gateways, DVR/NVR, phones, operations.
+- [docs/TESTING.md](docs/TESTING.md): unit tests and the multi-network streaming lab, with recorded results.
 - [docs/API.md](docs/API.md): REST API reference. Interactive OpenAPI docs are at `/api/docs`.
 - [docs/SECURITY.md](docs/SECURITY.md): security architecture, threat model and operator checklist.
 - [database/schema.sql](database/schema.sql): PostgreSQL schema. Regenerate it with `python -m scripts.dump_schema`.
@@ -164,13 +199,14 @@ The backend test suite (28 tests) covers:
 
 ```
 camerascope/
-├── backend/            FastAPI app (app/), tests/, Dockerfile
+├── backend/            FastAPI app (app/), migrations/ (Alembic), tests/ (+ tests/lab streaming lab), Dockerfile
 │   └── app/
 │       ├── routers/    auth, public, private, media (gateway proxy), library (saved/history/diagnostics)
 │       └── services/   netguard (SSRF), onvif, rtsp, mediamtx, sources (vendor presets), providers/
 ├── frontend/           Next.js app (src/app, src/components, src/lib), Dockerfile
 ├── database/           schema.sql
-├── mediamtx/           gateway config + demo camera config
+├── gateway/            Local Camera Gateway: agent/ (Python), mediamtx.yml, docker-compose.yml
+├── mediamtx/           cloud MediaMTX config + demo camera config
 ├── docs/               API.md, SECURITY.md
 ├── scripts/            generate-secrets.sh
 ├── Caddyfile

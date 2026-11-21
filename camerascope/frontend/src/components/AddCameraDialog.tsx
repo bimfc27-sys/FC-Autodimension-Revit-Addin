@@ -2,12 +2,14 @@
 
 import { FormEvent, useState } from "react";
 import { api } from "@/lib/api";
-import type { CameraConfig, OnvifProfile, PrivateCamera, Protocol, Vendor } from "@/lib/types";
+import type { CameraConfig, Gateway, OnvifProfile, PrivateCamera, Protocol, Site, Vendor } from "@/lib/types";
 
 interface Props {
   onClose: () => void;
   onCreated: (cam: PrivateCamera) => void;
   defaultLocation: [number, number] | null;
+  gateways: Gateway[];
+  sites: Site[];
 }
 
 const PROTOCOLS: { id: Protocol; label: string; hint: string }[] = [
@@ -21,7 +23,9 @@ const PROTOCOLS: { id: Protocol; label: string; hint: string }[] = [
 
 const DEFAULT_PORT: Record<Protocol, number> = { rtsp: 554, onvif: 80, vendor_api: 554, webrtc: 8889, hls: 80, mjpeg: 80 };
 
-export default function AddCameraDialog({ onClose, onCreated, defaultLocation }: Props) {
+export default function AddCameraDialog({ onClose, onCreated, defaultLocation, gateways, sites }: Props) {
+  const [gatewayId, setGatewayId] = useState<string>(gateways[0]?.id ?? "");
+  const [siteId, setSiteId] = useState<string>("");
   const [protocol, setProtocol] = useState<Protocol>("rtsp");
   const [vendor, setVendor] = useState<Vendor>("generic");
   const [name, setName] = useState("");
@@ -56,7 +60,7 @@ export default function AddCameraDialog({ onClose, onCreated, defaultLocation }:
     try {
       const res = await api<{ manufacturer: string; model: string; profiles: OnvifProfile[] }>("/api/cameras/onvif/probe", {
         method: "POST",
-        json: { host, port: effectivePort, use_tls: useTls, credentials: { username, password }, authorization_attested: attested },
+        json: { host, port: effectivePort, use_tls: useTls, credentials: { username, password }, gateway_id: gatewayId || null, authorization_attested: attested },
       });
       setProfiles(res.profiles);
       setDevice(`${res.manufacturer ?? ""} ${res.model ?? ""}`.trim());
@@ -83,14 +87,10 @@ export default function AddCameraDialog({ onClose, onCreated, defaultLocation }:
     };
     if (protocol === "onvif") {
       if (!profiles) return setError("Query the device first to select its stream profiles.");
-      const m = profiles.find((p) => p.token === mainProfile);
-      const s = profiles.find((p) => p.token === subProfile);
+      // Only profile tokens are sent; the server asks the device for the stream URIs itself.
       Object.assign(config, {
-        onvif_main_profile: m?.token ?? null,
-        onvif_sub_profile: s && s.token !== m?.token ? s.token : null,
-        resolved_main_uri: m?.stream_uri ?? null,
-        resolved_sub_uri: s && s.token !== m?.token ? s.stream_uri : null,
-        resolved_snapshot_uri: m?.snapshot_uri ?? null,
+        onvif_main_profile: mainProfile || null,
+        onvif_sub_profile: subProfile && subProfile !== mainProfile ? subProfile : null,
       });
     }
     setBusy(true);
@@ -108,6 +108,8 @@ export default function AddCameraDialog({ onClose, onCreated, defaultLocation }:
           credentials: username || password ? { username, password } : null,
           latitude: lat ? Number(lat) : null,
           longitude: lon ? Number(lon) : null,
+          gateway_id: gatewayId || null,
+          site_id: siteId || null,
           authorization_basis: basis,
           authorization_attested: attested,
         },
@@ -137,6 +139,21 @@ export default function AddCameraDialog({ onClose, onCreated, defaultLocation }:
         <label className="field">
           Name
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} placeholder="Front door" />
+        </label>
+
+        <label className="field">
+          Reached through
+          <select className="select" value={gatewayId} onChange={(e) => { setGatewayId(e.target.value); setProfiles(null); }}>
+            {gateways.map((g) => (
+              <option key={g.id} value={g.id}>Gateway: {g.name}{g.online ? "" : " (offline)"}</option>
+            ))}
+            <option value="">Direct / VPN – camera reachable from the cloud</option>
+          </select>
+          <span className="small">
+            {gatewayId
+              ? "Use the camera's address on that network (e.g. 192.168.1.20). Only the gateway connects to it."
+              : "Use a public address/DDNS name or an address routed through your VPN. Never assume a camera is reachable just because it is nearby."}
+          </span>
         </label>
 
         <label className="field">
@@ -251,7 +268,7 @@ export default function AddCameraDialog({ onClose, onCreated, defaultLocation }:
                   High quality profile
                   <select className="select" value={mainProfile} onChange={(e) => setMainProfile(e.target.value)}>
                     {profiles.map((p) => (
-                      <option key={p.token} value={p.token}>{p.name} {p.width ? `${p.width}×${p.height}` : ""} {p.encoding ?? ""}</option>
+                      <option key={p.token} value={p.token} disabled={!p.has_stream}>{p.name} {p.width ? `${p.width}×${p.height}` : ""} {p.encoding ?? ""}</option>
                     ))}
                   </select>
                 </label>
@@ -279,6 +296,17 @@ export default function AddCameraDialog({ onClose, onCreated, defaultLocation }:
             <input className="input" value={lon} onChange={(e) => setLon(e.target.value)} inputMode="decimal" />
           </label>
         </div>
+        {sites.some((s) => s.role === "manager") && (
+          <label className="field">
+            Building (optional – shares this camera with the building&apos;s members)
+            <select className="select" value={siteId} onChange={(e) => setSiteId(e.target.value)}>
+              <option value="">Not shared</option>
+              {sites.filter((s) => s.role === "manager").map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="row small">
           <input type="checkbox" checked={snapshotAllowed} onChange={(e) => setSnapshotAllowed(e.target.checked)} />
           Allow snapshots of this camera

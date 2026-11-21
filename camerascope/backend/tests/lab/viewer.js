@@ -1,0 +1,25 @@
+const { chromium, devices } = require('playwright');
+const S = process.argv[2];
+(async () => {
+  const b = await chromium.launch(); const ctx = await b.newContext({ ...devices['iPhone 13'], ignoreHTTPSErrors: true });
+  const page = await ctx.newPage();
+  const bodies = [];
+  page.on('response', async r => { if (r.url().includes('/api/cameras')) try { bodies.push(await r.text()); } catch {} });
+  await page.goto('https://localhost:8443/login');
+  await page.fill('input[type=email]', 'guard@example.com'); await page.fill('input[type=password]', 'Guard-Viewer-Pass9');
+  await page.click('button:has-text("Sign in")'); await page.waitForURL('**/dashboard');
+  await page.click('.bottom-nav button:has-text("Cameras")');
+  await page.waitForSelector('.cam-item');
+  console.log('viewer sees:', (await page.locator('.panel-body').innerText()).split('\n').filter(Boolean).slice(0, 8).join(' | '));
+  await page.screenshot({ path: `${S}/lab/viewer-list.png` });
+  await page.click('.cam-item:has-text("Office entrance")');
+  await page.waitForTimeout(9000);
+  const v = await page.evaluate(() => { const t = document.querySelector('.tile'); const v = t.querySelector('video'); return { w: v.videoWidth, t: v.currentTime, badge: t.querySelector('.badge').innerText, diag: !!t.querySelector('button[aria-label=Diagnostics]') }; });
+  await page.waitForTimeout(2000);
+  const t2 = await page.evaluate(() => document.querySelector('.tile video').currentTime);
+  console.log('shared playback:', JSON.stringify(v), 'advancing:', t2 > v.t);
+  const all = bodies.join('');
+  console.log('host/creds/paths visible to viewer:', ['192.168', 'Pass9', 'stream1', '"username":"admin"'].filter(s => all.includes(s)));
+  await page.screenshot({ path: `${S}/lab/viewer-live.png` });
+  await b.close();
+})();

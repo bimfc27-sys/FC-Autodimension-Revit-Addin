@@ -8,6 +8,8 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY app ./app
+COPY migrations ./migrations
+COPY alembic.ini ./
 COPY scripts ./scripts
 
 USER app
@@ -15,5 +17,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status == 200 else 1)"
 # The backend port is only reachable from the Caddy proxy on the internal network,
-# so forwarded headers from that network are trusted.
+# so forwarded headers from that network are trusted. Database migrations run at
+# startup. Exactly ONE worker: gateway tunnels live in this process.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*", "--no-server-header"]

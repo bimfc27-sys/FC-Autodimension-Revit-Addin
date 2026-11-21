@@ -170,6 +170,56 @@ These endpoints require a session. For `prv-*` paths the backend checks that the
 
 Checks for private cameras: configuration → DNS and network policy → TCP → protocol handshake (RTSP OPTIONS/DESCRIBE with **one** authentication attempt, ONVIF GetDeviceInformation, HLS playlist or MJPEG content type) → gateway path state → vendor snapshot endpoint.
 
+## Local Camera Gateways
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/gateways` | Your gateways. Each entry includes `status` (`pending`, `online` or `offline`), `online`, `last_seen_at`, `agent_version`, the `allowed_subnets` the agent reported, and camera and recorder counts. |
+| POST | `/gateways` | Body: `{name, description?}`. Returns `{gateway, enrollment_code, expires_at}`. The code is shown **once** and is valid for 30 minutes. |
+| POST | `/gateways/{id}/reenroll` | Revokes the gateway secret, disconnects the gateway and issues a new enrollment code. |
+| PATCH / DELETE | `/gateways/{id}` | Rename or delete a gateway. Deleting returns `409` while cameras or recorders still use it. |
+| GET | `/gateways/{id}/info` | Live information from the agent. Returns `409` if the gateway is offline. |
+| POST | `/gateways/enroll` | **Agent only.** Body: `{code, agent_version}`. Returns `{gateway_id, secret}`. Single use, rate-limited. |
+| WS | `/gateways/tunnel` | **Agent only.** Requires `Authorization: Bearer <gateway_id>.<secret>`. The wire protocol is in `backend/app/tunnel/protocol.py`. |
+
+Cameras and recorders take an optional `gateway_id` (`null` means Direct / VPN). Camera responses include:
+
+- `connection`: `gateway` or `cloud`
+- `gateway`: `{id, name, online}`
+- `device`
+- `site`
+- `channel`
+- `status`: one of `online`, `offline`, `auth_failed`, `gateway_offline` or `unknown`
+- `access`: `owner` or `shared`
+
+`GET /cameras?scope=all|mine|shared` lists cameras, including the building cameras shared with you. Playback returns `503` with a clear message while the camera's gateway is offline.
+
+## DVR / NVR recorders
+
+| Method | Path | Description |
+|---|---|---|
+| GET / POST | `/devices` | List or register recorders. The body is `{name, kind, protocol: "onvif"\|"vendor_api", vendor, host, port, rtsp_port, use_tls, credentials, gateway_id, site_id, authorization_basis, authorization_attested: true}`. |
+| PATCH / DELETE | `/devices/{id}` | Rename, change credentials (which unlocks the recorder's channels), or delete the recorder and its channel cameras. |
+| POST | `/devices/{id}/discover` | Returns the channels: `{index, name, resolution, has_sub_stream, imported_camera_id}`. No stream URIs are returned. |
+| POST | `/devices/{id}/import` | Body: `{channels: [{index, name}]}`. Creates one camera per channel. The server re-resolves the stream URIs itself. |
+
+## Buildings (sites), favorites, groups
+
+| Method | Path | Description |
+|---|---|---|
+| GET / POST | `/sites` | Buildings you belong to, with your `role`. Creating a building makes you its manager. |
+| PATCH / DELETE | `/sites/{id}` | Manager only. Deleting a building un-shares its cameras. |
+| GET | `/sites/{id}/members` | Any member. |
+| POST | `/sites/{id}/members` | Manager only. Body: `{email, role: "viewer"\|"manager"}`. |
+| DELETE | `/sites/{id}/members/{user_id}` | Manager, or yourself to leave. A building must keep at least one manager. |
+| GET | `/favorites` | Mixed list of public and private cameras. |
+| PUT / DELETE | `/favorites/{public\|private}/{camera_id}` | Add or remove a favorite. |
+| GET / POST | `/groups` | Your groups, each with its cameras resolved. Only cameras you can still view are returned. |
+| PATCH / DELETE | `/groups/{id}` | Rename or delete a group. |
+| PUT | `/groups/{id}/items` | Body: `{items: [{camera_kind, camera_id}]}`. Replaces the members in order, up to 64 per group. |
+
+`/saved` endpoints from v1 still work as aliases for public favorites.
+
 ## Providers and health
 
 | Method | Path | Description |

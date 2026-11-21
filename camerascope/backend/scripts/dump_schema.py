@@ -14,7 +14,7 @@ from app import models  # noqa: E402,F401
 from app.db import Base  # noqa: E402
 
 print("-- CameraScope PostgreSQL schema (generated from backend/app/models.py)")
-print("-- The backend also creates these tables automatically on startup.\n")
+print("-- Reference only: the schema is created and upgraded by Alembic migrations (backend/migrations).\n")
 print("BEGIN;\n")
 dialect = postgresql.dialect()
 for table in Base.metadata.sorted_tables:

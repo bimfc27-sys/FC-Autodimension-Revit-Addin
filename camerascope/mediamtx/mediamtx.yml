@@ -25,15 +25,17 @@ srt: no
 
 hls: yes
 hlsAddress: :8888
-hlsVariant: lowLatency
+# Standard fMP4 HLS: works with hls.js and Safari's native player (incl. iPhone).
+# WebRTC is the low-latency path; HLS is the fallback.
+hlsVariant: fmp4
 hlsSegmentCount: 7
 hlsSegmentDuration: 1s
-hlsPartDuration: 200ms
 
 webrtc: yes
 webrtcAddress: :8889
 webrtcLocalUDPAddress: :8189
-webrtcLocalTCPAddress: ''
+# Also accept WebRTC media over TCP (cellular networks that block UDP).
+webrtcLocalTCPAddress: :8189
 webrtcIPsFromInterfaces: yes
 # Public IP / hostname clients use to reach UDP 8189. Set via the
 # MTX_WEBRTCADDITIONALHOSTS environment variable in docker-compose.

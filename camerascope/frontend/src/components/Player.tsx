@@ -9,6 +9,8 @@ export type PlayerStatus = "connecting" | "playing" | "stalled" | "error";
 export interface PlayerHandle {
   /** Capture the current frame as a JPEG blob (null if the browser forbids it). */
   capture(): Promise<Blob | null>;
+  /** iPhone Safari has no element fullscreen API; fall back to native video fullscreen. */
+  nativeFullscreen(): boolean;
 }
 
 interface Props {
@@ -39,8 +41,13 @@ async function startWhep(url: string, video: HTMLVideoElement, onFail: (msg: str
   const pc = new RTCPeerConnection({ iceServers: [] });
   pc.addTransceiver("video", { direction: "recvonly" });
   pc.addTransceiver("audio", { direction: "recvonly" });
+  // MediaMTX's WHEP answer may not associate tracks with a stream id, so build
+  // the MediaStream from the incoming tracks ourselves.
+  const stream = new MediaStream();
   pc.ontrack = (ev) => {
-    if (video.srcObject !== ev.streams[0]) video.srcObject = ev.streams[0];
+    stream.addTrack(ev.track);
+    if (video.srcObject !== stream) video.srcObject = stream;
+    video.play().catch(() => {});
   };
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === "failed") onFail("WebRTC connection failed");
@@ -74,6 +81,14 @@ const Player = forwardRef<PlayerHandle, Props>(function Player({ playback, hlsLe
   statusRef.current = onStatus;
 
   useImperativeHandle(ref, () => ({
+    nativeFullscreen() {
+      const v = videoRef.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
+      if (v?.webkitEnterFullscreen) {
+        v.webkitEnterFullscreen();
+        return true;
+      }
+      return false;
+    },
     async capture() {
       const v = videoRef.current;
       const img = imgRef.current;
@@ -153,10 +168,11 @@ const Player = forwardRef<PlayerHandle, Props>(function Player({ playback, hlsLe
           if (cancelled) return cleanup();
           onTransport?.("WebRTC");
           video.play().catch(() => {});
-          // If no frames arrive in time, fall back to HLS.
+          // If no frames arrive in time, fall back to HLS. On-demand chains
+          // (cloud -> tunnel -> gateway -> camera) can take a few seconds to start.
           setTimeout(() => {
             if (!cancelled && !failed && video.readyState < 2) fallback("WebRTC timeout");
-          }, 8000);
+          }, 12000);
           return;
         } catch {
           /* fall through to HLS */
@@ -224,6 +240,8 @@ const Player = forwardRef<PlayerHandle, Props>(function Player({ playback, hlsLe
       muted
       playsInline
       autoPlay
+      // eslint-disable-next-line react/no-unknown-property
+      webkit-playsinline="true"
       crossOrigin={playback.mode === "hls" ? "anonymous" : undefined}
       onPlaying={() => statusRef.current("playing")}
       onWaiting={() => statusRef.current("stalled")}

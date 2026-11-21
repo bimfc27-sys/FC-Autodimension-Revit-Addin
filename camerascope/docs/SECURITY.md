@@ -93,7 +93,45 @@ The `audit_log` table records:
 
 Each entry has the user, target, IP and timestamp. Passwords and credentials are never logged.
 
-## 9. Operator checklist
+## 9. Local Camera Gateways (v2)
+
+**Trust model.**
+- The cloud is trusted to run your dashboard.
+- Each gateway is trusted by, and controlled by, the owner of its network.
+- The tunnel is designed so that even a compromised cloud can reach only what each network owner allowed.
+
+| Control | Where it is enforced |
+|---|---|
+| **Outbound only.** The agent dials `wss://<your domain>/api/gateways/tunnel` and never listens on the LAN, except for a MediaMTX auth hook on the private Docker network. No router port-forwarding. | Gateway |
+| **Enrollment.** A one-time code, valid 30 minutes, is exchanged for a random 320-bit gateway secret. The cloud stores only its SHA-256 hash and compares in constant time. *Re-enroll* revokes the old secret and drops the live tunnel. | Cloud |
+| **Transport.** TLS from Caddy (Let's Encrypt) with certificate verification in the agent. Optionally a private CA via `CLOUD_CA_FILE`. Environment proxies are not used. | Both |
+| **Allow-list.** Every TCP connection and every stream source the cloud asks for is resolved **on the gateway** and must fall inside `ALLOWED_SUBNETS` and `ALLOWED_PORTS`. Anything else is refused and logged as `REFUSED`. This was tested: a camera registered outside the subnet was refused by the gateway. | Gateway |
+| **No scanning.** The protocol has no sweep or discovery-by-range operation. The cloud can only open connections to hosts the owner explicitly registered. Reachability checks are plain TCP connects to those registered hosts, without credentials. | Gateway and cloud |
+| **Gateway MediaMTX** publishes no ports. Reads require the relay account, which is checked by the agent's auth hook. Nobody may publish. Other LAN devices cannot pull feeds from it. | Gateway |
+| **Cloud forwarders** (the cloud end of each tunnel) listen only on the internal Docker network and accept connections only from the cloud MediaMTX container. | Cloud |
+| **Device-reported URLs are pinned.** ONVIF/NVR stream and snapshot URIs have their host replaced with the address the owner configured, then they are routed through that camera's gateway. A device cannot redirect the cloud anywhere else. | Cloud |
+| **Credentials in transit.** Camera passwords are decrypted in the cloud only when needed and travel only inside the TLS tunnel to the gateway's MediaMTX (memory only), or in the RTSP/ONVIF/HTTP authentication to the camera. | Both |
+| **No proximity assumptions.** Whether a camera is reached "via gateway X" or "Direct / VPN" is chosen explicitly. Status comes from measured reachability from that path, never from location. | Cloud |
+| **Single backend worker.** Tunnels live in the backend process. Run exactly one backend replica. | Ops |
+
+Remaining risk: the hop between the gateway (or the cloud, for Direct/VPN cameras) and the camera uses the camera's own protocol. RTSP and HTTP are unencrypted on the LAN unless the camera supports RTSPS or HTTPS, and cameras' self-signed certificates are not verified on that hop. Keep cameras on a dedicated VLAN and list only that VLAN in `ALLOWED_SUBNETS`.
+
+## 10. Roles and sharing (v2)
+
+- **Global roles:** `admin`, which is the first account and can trigger public-provider sync, and `user`.
+- **Building (site) roles:**
+  - **manager:** can add people and assign *their own* cameras or recorders to the building.
+  - **viewer:** can only watch the building's cameras.
+- **Shared viewers** receive a camera's name, status and playback only. The API never sends them its address, port, stream paths, username or last error. Diagnostics, editing and deletion are **owner-only** (404 for everyone else).
+- Removing a member immediately revokes access, including through favorites, groups and the media proxy. Their own cameras leave the building at the same time.
+
+## 11. Secrets never reach the browser (v2)
+
+- Playback descriptors contain only the authenticated proxy paths `/api/media/<random-path>/…`. They never contain RTSP URLs, hosts or credentials.
+- ONVIF probing returns profile names, tokens and resolutions only. The server resolves the stream URIs itself and stores them server-side. API responses strip `resolved_*` keys from the camera configuration.
+- The browser tests scan every `/api/*` response and every console message for camera passwords, `rtsp://` and the relay secret. They found none.
+
+## 12. Operator checklist
 
 - [ ] Run `scripts/generate-secrets.sh`. Never reuse the example values. Back up `CREDENTIAL_KEYS` securely.
 - [ ] Set `SITE_ADDRESS` to a real domain so a trusted certificate is issued.
@@ -104,6 +142,6 @@ Each entry has the user, target, IP and timestamp. Passwords and credentials are
 - [ ] Review `audit_log` regularly for signs of misuse, such as many ONVIF probes or repeated `auth_failed` cameras.
 - [ ] Publish an acceptable-use policy saying users may add only cameras they own or are authorised to access, and act on abuse reports.
 
-## 10. Reporting vulnerabilities
+## 13. Reporting vulnerabilities
 
 Please report security issues privately to the maintainers rather than opening a public issue. Include reproduction steps. We aim to acknowledge reports within 72 hours.

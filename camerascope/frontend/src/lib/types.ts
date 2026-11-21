@@ -45,6 +45,17 @@ export interface CameraConfig {
   snapshot_allowed?: boolean;
 }
 
+export type CameraStatus = "online" | "offline" | "auth_failed" | "gateway_offline" | "unknown";
+
+export interface Ref {
+  id: string;
+  name: string;
+}
+
+export interface GatewayRef extends Ref {
+  online: boolean;
+}
+
 export interface PrivateCamera {
   kind: "private";
   id: string;
@@ -52,7 +63,9 @@ export interface PrivateCamera {
   description: string | null;
   protocol: Protocol;
   vendor: Vendor;
-  host: string;
+  is_owner: boolean;
+  access: "owner" | "shared";
+  host: string | null;
   port: number | null;
   use_tls: boolean;
   config: CameraConfig;
@@ -62,10 +75,91 @@ export interface PrivateCamera {
   username: string | null;
   authorization_basis: "owner" | "authorized_user";
   authorization_attested_at: string;
-  status: string;
+  status: CameraStatus;
+  connection: "gateway" | "cloud";
+  gateway: GatewayRef | null;
+  device: Ref | null;
+  site: Ref | null;
+  channel: number | null;
+  reachable_checked_at: string | null;
   last_error: string | null;
   last_checked_at: string | null;
   created_at: string;
+}
+
+export interface Gateway {
+  id: string;
+  name: string;
+  description: string | null;
+  status: "pending" | "online" | "offline";
+  online: boolean;
+  last_seen_at: string | null;
+  agent_version: string | null;
+  allowed_subnets: string[];
+  remote_address: string | null;
+  camera_count: number;
+  device_count: number;
+  created_at: string;
+}
+
+export interface Enrollment {
+  gateway: Gateway;
+  enrollment_code: string;
+  expires_at: string;
+}
+
+export interface Device {
+  id: string;
+  name: string;
+  kind: "nvr" | "dvr";
+  protocol: "onvif" | "vendor_api";
+  vendor: string;
+  host: string;
+  port: number | null;
+  rtsp_port: number | null;
+  use_tls: boolean;
+  model: string | null;
+  status: string;
+  last_error: string | null;
+  last_discovery_at: string | null;
+  connection: "gateway" | "cloud";
+  gateway: GatewayRef | null;
+  site: Ref | null;
+  channel_count: number;
+}
+
+export interface DeviceChannel {
+  index: number;
+  name: string;
+  main_profile: string | null;
+  sub_profile: string | null;
+  resolution: string | null;
+  has_sub_stream: boolean;
+  imported_camera_id: string | null;
+}
+
+export interface Site {
+  id: string;
+  name: string;
+  address: string | null;
+  role: "manager" | "viewer";
+  camera_count: number;
+  member_count: number;
+}
+
+export interface SiteMember {
+  user_id: string;
+  email: string;
+  display_name: string;
+  role: "manager" | "viewer";
+  added_at: string;
+}
+
+export interface CameraGroup {
+  id: string;
+  name: string;
+  position: number;
+  cameras: AnyCamera[];
 }
 
 export type AnyCamera = PublicCamera | PrivateCamera;
@@ -105,9 +199,9 @@ export interface DiagnosticsRun {
 export interface OnvifProfile {
   token: string;
   name: string;
+  source_token: string | null;
   encoding: string | null;
   width: number | null;
   height: number | null;
-  stream_uri: string | null;
-  snapshot_uri: string | null;
+  has_stream: boolean;
 }
