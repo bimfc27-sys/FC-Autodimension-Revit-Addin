@@ -1,0 +1,103 @@
+# CameraScope - production-style stack.
+#   cp .env.example .env && ./scripts/generate-secrets.sh   (fills secrets)
+#   docker compose up -d --build
+#   docker compose --profile demo up -d --build   (adds a simulated IP camera)
+
+name: camerascope
+
+services:
+  postgres:
+    image: postgres:16.6-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: camerascope
+      POSTGRES_USER: camerascope
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U camerascope -d camerascope"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [data]
+
+  mediamtx:
+    image: bluenviron/mediamtx:1.9.3
+    restart: unless-stopped
+    environment:
+      # Public IP or DNS name browsers use to reach UDP 8189 for WebRTC media.
+      MTX_WEBRTCADDITIONALHOSTS: ${PUBLIC_HOST:-localhost}
+    volumes:
+      - ./mediamtx/mediamtx.yml:/mediamtx.yml:ro
+    ports:
+      - "8189:8189/udp"   # WebRTC media only; HTTP signalling goes through the backend
+    networks: [media, cameras]
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      mediamtx: { condition: service_started }
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql+asyncpg://camerascope:${POSTGRES_PASSWORD}@postgres:5432/camerascope
+      JWT_SECRET: ${JWT_SECRET:?run scripts/generate-secrets.sh}
+      CREDENTIAL_KEYS: ${CREDENTIAL_KEYS:?run scripts/generate-secrets.sh}
+      COOKIE_SECURE: "true"
+      ALLOW_PRIVATE_NETWORK_TARGETS: ${ALLOW_PRIVATE_NETWORK_TARGETS:-true}
+      NETGUARD_DENY_HOSTS: postgres,mediamtx,backend,frontend,caddy,localhost
+      MEDIAMTX_API_URL: http://mediamtx:9997
+      MEDIAMTX_HLS_URL: http://mediamtx:8888
+      MEDIAMTX_WEBRTC_URL: http://mediamtx:8889
+      PROVIDERS_ENABLED: ${PROVIDERS_ENABLED:-seed,caltrans,nyc_dot,osm}
+      CALTRANS_DISTRICTS: ${CALTRANS_DISTRICTS:-3,4,7,11,12}
+      WINDY_API_KEY: ${WINDY_API_KEY:-}
+    networks: [data, media, web, cameras]
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        BACKEND_URL: http://backend:8000
+    restart: unless-stopped
+    depends_on: [backend]
+    networks: [web]
+
+  caddy:
+    image: caddy:2.8.4-alpine
+    restart: unless-stopped
+    depends_on: [frontend, backend]
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [web]
+
+  # Simulated IP camera for end-to-end testing; started only with --profile demo.
+  demo-camera:
+    image: bluenviron/mediamtx:1.9.3-ffmpeg
+    profiles: [demo]
+    restart: unless-stopped
+    volumes:
+      - ./mediamtx/demo-camera.yml:/mediamtx.yml:ro
+    networks: [cameras]
+
+networks:
+  data: { internal: true }    # database: no internet access
+  media: { internal: true }   # backend <-> gateway control/API
+  web: {}                     # caddy <-> frontend/backend
+  cameras: {}                 # gateway/backend -> cameras (internet + LAN)
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

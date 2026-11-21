@@ -1,0 +1,61 @@
+# MediaMTX streaming gateway for CameraScope (v1.9.x configuration schema).
+# Pulls camera sources (RTSP/RTSPS, ONVIF-resolved RTSP, WHEP, HLS) on demand
+# and serves them as WebRTC (WHEP) and HLS. Paths are created at runtime by the
+# backend through the control API. Only the WebRTC UDP port is published; the
+# HLS / WHEP HTTP endpoints are reached exclusively via the authenticated
+# backend proxy (/api/media/...).
+
+logLevel: info
+logDestinations: [stdout]
+
+readTimeout: 10s
+writeTimeout: 10s
+
+# Control API - internal network only (port not published).
+api: yes
+apiAddress: :9997
+metrics: no
+pprof: no
+playback: no
+
+# No inbound publishing protocols are exposed.
+rtsp: no
+rtmp: no
+srt: no
+
+hls: yes
+hlsAddress: :8888
+hlsVariant: lowLatency
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
+
+webrtc: yes
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: ''
+webrtcIPsFromInterfaces: yes
+# Public IP / hostname clients use to reach UDP 8189. Set via the
+# MTX_WEBRTCADDITIONALHOSTS environment variable in docker-compose.
+webrtcAdditionalHosts: []
+webrtcICEServers2: []
+
+authMethod: internal
+authInternalUsers:
+  # Only containers on the private Docker network (the backend) may use the API
+  # or read streams. Browsers never talk to these HTTP ports directly.
+  - user: any
+    pass:
+    ips: ['127.0.0.1', '::1', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']
+    permissions:
+      - action: api
+      - action: read
+        path:
+
+pathDefaults:
+  sourceOnDemand: yes
+  sourceOnDemandStartTimeout: 15s
+  sourceOnDemandCloseAfter: 20s
+  rtspTransport: tcp
+
+paths: {}

@@ -1,0 +1,25 @@
+# HTTPS termination. SITE_ADDRESS=localhost uses Caddy's internal CA;
+# a real domain name gets a Let's Encrypt certificate automatically.
+{$SITE_ADDRESS:localhost} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+
+	# API, media proxy (HLS/WHEP) and OpenAPI docs -> FastAPI
+	handle /api/* {
+		reverse_proxy backend:8000 {
+			flush_interval -1
+		}
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+}
+
+# Redirect plain HTTP to HTTPS (Caddy does this automatically for named hosts).

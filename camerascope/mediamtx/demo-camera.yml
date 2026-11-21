@@ -1,0 +1,49 @@
+# Simulated IP camera for local testing (docker compose --profile demo).
+# Exposes two RTSP streams:
+#   rtsp://demo-camera:8554/public                         (no auth, "public" demo feed)
+#   rtsp://demo:demo-Passw0rd@demo-camera:8554/private     (authenticated "owned" camera)
+#   rtsp://demo:demo-Passw0rd@demo-camera:8554/private_sub (low-quality sub stream)
+logLevel: warn
+api: no
+rtmp: no
+hls: no
+webrtc: no
+srt: no
+rtsp: yes
+rtspAddress: :8554
+protocols: [tcp]
+
+authMethod: internal
+authInternalUsers:
+  - user: any
+    ips: ['127.0.0.1', '::1']
+    permissions:
+      - action: publish
+  - user: any
+    permissions:
+      - action: read
+        path: public
+  - user: demo
+    pass: demo-Passw0rd
+    permissions:
+      - action: read
+
+paths:
+  public:
+    runOnInit: >
+      ffmpeg -re -f lavfi -i testsrc2=size=1280x720:rate=25 -f lavfi -i sine=frequency=440
+      -c:v libx264 -preset ultrafast -tune zerolatency -g 50 -pix_fmt yuv420p -c:a libopus -b:a 48k
+      -f rtsp -rtsp_transport tcp rtsp://localhost:$RTSP_PORT/$MTX_PATH
+    runOnInitRestart: yes
+  private:
+    runOnInit: >
+      ffmpeg -re -f lavfi -i smptehdbars=size=1920x1080:rate=25
+      -c:v libx264 -preset ultrafast -tune zerolatency -g 50 -pix_fmt yuv420p
+      -f rtsp -rtsp_transport tcp rtsp://localhost:$RTSP_PORT/$MTX_PATH
+    runOnInitRestart: yes
+  private_sub:
+    runOnInit: >
+      ffmpeg -re -f lavfi -i smptehdbars=size=640x360:rate=15
+      -c:v libx264 -preset ultrafast -tune zerolatency -g 30 -pix_fmt yuv420p
+      -f rtsp -rtsp_transport tcp rtsp://localhost:$RTSP_PORT/$MTX_PATH
+    runOnInitRestart: yes

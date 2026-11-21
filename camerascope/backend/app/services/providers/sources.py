@@ -46,6 +46,7 @@ class CaltransProvider(Provider):
 
     async def fetch_all(self) -> list[CameraRecord]:
         out: list[CameraRecord] = []
+        errors: list[str] = []
         for d in get_settings().caltrans_districts.split(","):
             d = d.strip()
             if not d.isdigit():
@@ -55,6 +56,7 @@ class CaltransProvider(Provider):
                 payload = await _get_json(url)
             except Exception as exc:  # one district failing must not stop the others
                 log.warning("caltrans district %s failed: %s", d, exc)
+                errors.append(f"D{d}: {exc}")
                 continue
             for item in payload.get("data", []):
                 c = item.get("cctv", {})
@@ -88,6 +90,8 @@ class CaltransProvider(Provider):
                         status="online" if str(c.get("inService", "true")).lower() == "true" else "offline",
                     )
                 )
+        if errors and not out:
+            raise RuntimeError("all districts failed - " + "; ".join(errors)[:300])
         return out
 
 
