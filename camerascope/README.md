@@ -9,6 +9,7 @@ CameraScope is a web app for watching **all the IP cameras and DVR/NVR channels 
 - **Buildings.** Cameras explicitly shared with people as viewers or managers.
 - **Groups**, **favorites**, a **mobile-first** UI, automatic stream reconnection, Alembic migrations, and an end-to-end streaming test lab.
 
+→ **iPhone-only Free Edition on Cloudflare (Pages + Workers + D1, snapshot view, no hardware at all):** [docs/FREE-EDITION.md](docs/FREE-EDITION.md) · feasibility audit: [docs/CLOUD-EDITION-AUDIT.md](docs/CLOUD-EDITION-AUDIT.md)
 → **Free deployment on your own Windows PC + Tailscale (no VPS, domain or extra hardware):** [docs/FREE-DEPLOYMENT.md](docs/FREE-DEPLOYMENT.md)
 → **Server deployment:** [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) · **How it was tested:** [docs/TESTING.md](docs/TESTING.md)
 
@@ -208,6 +209,7 @@ camerascope/
 │       └── services/   netguard (SSRF), onvif, rtsp, mediamtx, sources (vendor presets), providers/
 ├── frontend/           Next.js app (src/app, src/components, src/lib), Dockerfile
 ├── database/           schema.sql
+├── free-edition/       iPhone-only Free Edition: Pages Functions API (src/), D1 migrations, deploy script, tests
 ├── deploy/windows/     free home-PC deployment: compose file + PowerShell install/start/stop/update scripts
 ├── gateway/            Local Camera Gateway: agent/ (Python), mediamtx.yml, docker-compose.yml, windows/ (native installer)
 ├── mediamtx/           cloud MediaMTX config + demo camera config
