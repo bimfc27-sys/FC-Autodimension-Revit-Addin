@@ -21,7 +21,7 @@ const PROTOCOLS: { id: Protocol; label: string; hint: string }[] = [
   { id: "mjpeg", label: "MJPEG / HTTP", hint: "Multipart JPEG stream over HTTP(S)" },
 ];
 
-const DEFAULT_PORT: Record<Protocol, number> = { rtsp: 554, onvif: 80, vendor_api: 554, webrtc: 8889, hls: 80, mjpeg: 80 };
+const DEFAULT_PORT: Record<Protocol, number> = { rtsp: 554, onvif: 80, vendor_api: 554, webrtc: 8889, hls: 80, mjpeg: 80, snapshot: 80 };
 
 export default function AddCameraDialog({ onClose, onCreated, defaultLocation, gateways, sites }: Props) {
   const [gatewayId, setGatewayId] = useState<string>(gateways[0]?.id ?? "");

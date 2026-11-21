@@ -8,3 +8,6 @@ frontend/out/
 *.log
 deploy/windows/backup-*.sql
 gateway/windows/*.log
+.dev.vars
+free-edition/.wrangler/
+free-edition/public/

@@ -5,6 +5,8 @@ import { api } from "@/lib/api";
 import { Transport, getTransport, setTransport } from "@/lib/prefs";
 import type { CameraGroup, Device, DeviceChannel, Enrollment, Gateway, PrivateCamera, Site, SiteMember } from "@/lib/types";
 import { STATUS_TEXT } from "./CamerasPanel";
+import RecordersFree from "./RecordersFree";
+import { FREE } from "@/lib/edition";
 
 type Sub = "gateways" | "recorders" | "buildings" | "groups" | "settings";
 
@@ -476,7 +478,17 @@ function Settings() {
   }, []);
   return (
     <>
-      <div className="card">
+      {FREE && (
+        <div className="card">
+          <strong>CameraScope Free Edition</strong>
+          <div className="small muted">
+            Runs entirely on Cloudflare&apos;s free services. Cameras and recorders must be reachable from the internet (public IP/DDNS +
+            port-forward). Video = verified snapshot view refreshed every few seconds; live RTSP video, gateways and LAN-only cameras
+            need the self-hosted or home-PC edition.
+          </div>
+        </div>
+      )}
+      <div className="card" style={FREE ? { display: "none" } : undefined}>
         <strong>Video transport on this device</strong>
         <select className="select" value={t} onChange={(e) => { setT(e.target.value as Transport); setTransport(e.target.value as Transport); }} aria-label="Video transport">
           <option value="auto">Automatic – WebRTC (lowest delay), HLS fallback</option>
@@ -494,18 +506,20 @@ function Settings() {
 }
 
 export default function ManagePanel(p: Props) {
-  const [sub, setSub] = useState<Sub>("gateways");
+  const [sub, setSub] = useState<Sub>(FREE ? "recorders" : "gateways");
   const offline = p.gateways.filter((g) => !g.online && g.status !== "pending").length;
   return (
     <>
       <div className="subtabs">
-        {([["gateways", `Gateways${offline ? ` ⚠${offline}` : ""}`], ["recorders", "DVR / NVR"], ["buildings", "Buildings"], ["groups", "Groups"], ["settings", "Settings"]] as [Sub, string][]).map(([id, label]) => (
+        {(([["gateways", `Gateways${offline ? ` ⚠${offline}` : ""}`], ["recorders", "DVR / NVR"], ["buildings", "Buildings"], ["groups", "Groups"], ["settings", "Settings"]] as [Sub, string][])
+          .filter(([id]) => !(FREE && id === "gateways"))).map(([id, label]) => (
           <button key={id} className={`btn sm ${sub === id ? "primary" : ""}`} onClick={() => setSub(id)}>{label}</button>
         ))}
         <button className="btn sm" onClick={p.onAddCamera}>+ Camera</button>
       </div>
       {sub === "gateways" && <Gateways gateways={p.gateways} reload={p.reload} />}
-      {sub === "recorders" && <Recorders devices={p.devices} gateways={p.gateways} sites={p.sites} reload={p.reload} />}
+      {sub === "recorders" && !FREE && <Recorders devices={p.devices} gateways={p.gateways} sites={p.sites} reload={p.reload} />}
+      {sub === "recorders" && FREE && <RecordersFree devices={p.devices} sites={p.sites} reload={p.reload} />}
       {sub === "buildings" && <Buildings sites={p.sites} cameras={p.cameras} reload={p.reload} />}
       {sub === "groups" && <Groups groups={p.groups} reload={p.reload} />}
       {sub === "settings" && <Settings />}

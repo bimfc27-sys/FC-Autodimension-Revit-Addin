@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { FREE } from "@/lib/edition";
 import type { AnyCamera, CameraGroup, PrivateCamera } from "@/lib/types";
 
 export const STATUS_TEXT: Record<string, string> = {
@@ -8,10 +9,21 @@ export const STATUS_TEXT: Record<string, string> = {
   offline: "Offline",
   auth_failed: "Login rejected",
   gateway_offline: "Gateway offline",
+  not_internet_reachable: "Not reachable from the internet",
   unknown: "Checking…",
 };
 
+/** Free Edition: whether this camera can show anything, and why not. */
+export function VideoChip({ cam }: { cam: PrivateCamera }) {
+  if (!cam.video) return null;
+  if (cam.video.available) {
+    return <span className="badge public" title={`Verified ${cam.video.verified_at ? new Date(cam.video.verified_at).toLocaleString() : ""}`}>📷 Snapshot view</span>;
+  }
+  return <span className="badge neutral" title={cam.video.reason ?? ""}>No video</span>;
+}
+
 export function ConnectionLabel({ cam }: { cam: PrivateCamera }) {
+  if (FREE) return <span className="conn" title="Reached by Cloudflare over the internet">🌐 Internet</span>;
   if (cam.gateway) {
     return (
       <span className={`conn ${cam.gateway.online ? "" : "gw-off"}`} title="Local Camera Gateway this camera is reached through">
@@ -59,6 +71,7 @@ export function CameraRow({ cam, open, favorite, onOpen, onFavorite, onGroup }: 
             <ConnectionLabel cam={priv} />
             {priv.device && <span>· {priv.device.name}{priv.channel ? ` CH${priv.channel}` : ""}</span>}
             {priv.access === "shared" && <span className="badge private">Shared</span>}
+            <VideoChip cam={priv} />
           </>
         ) : (
           <>
@@ -67,6 +80,7 @@ export function CameraRow({ cam, open, favorite, onOpen, onFavorite, onGroup }: 
           </>
         )}
       </div>
+      {priv?.video && !priv.video.available && priv.video.reason && <div className="small muted">{priv.video.reason}</div>}
     </div>
   );
 }
@@ -99,7 +113,7 @@ export default function CamerasPanel(p: Props) {
         shared.get(k)!.cams.push(c);
       } else {
         const k = c.gateway?.id ?? "direct";
-        if (!mine.has(k)) mine.set(k, { label: c.gateway ? `Gateway: ${c.gateway.name}` : "Direct / VPN", online: c.gateway ? c.gateway.online : null, cams: [] });
+        if (!mine.has(k)) mine.set(k, { label: c.gateway ? `Gateway: ${c.gateway.name}` : FREE ? "My cameras" : "Direct / VPN", online: c.gateway ? c.gateway.online : null, cams: [] });
         mine.get(k)!.cams.push(c);
       }
     }

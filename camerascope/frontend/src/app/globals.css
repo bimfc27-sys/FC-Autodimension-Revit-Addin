@@ -53,7 +53,7 @@ label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; 
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--muted); flex: none; }
 .dot.s-online, .dot.s-playing { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
 .dot.s-connecting, .dot.s-stalled { background: var(--warn); }
-.dot.s-offline, .dot.s-error, .dot.s-auth_failed { background: var(--err); }
+.dot.s-offline, .dot.s-error, .dot.s-auth_failed, .dot.s-not_internet_reachable, .dot.s-gateway_offline { background: var(--err); }
 
 /* ---------------------------------------------------------------- auth */
 .auth-wrap { min-height: 100%; display: grid; place-items: center; padding: 24px; }
@@ -93,7 +93,7 @@ label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; 
 .conn { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
 .conn.gw-off { color: #fca5a5; }
 .status-label { font-size: 11px; }
-.status-label.s-online { color: var(--ok); } .status-label.s-offline, .status-label.s-auth_failed, .status-label.s-gateway_offline { color: #fca5a5; }
+.status-label.s-online { color: var(--ok); } .status-label.s-offline, .status-label.s-auth_failed, .status-label.s-gateway_offline, .status-label.s-not_internet_reachable { color: #fca5a5; }
 .status-label.s-unknown { color: var(--muted); }
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .code-box { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: #0e1420; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; word-break: break-all; white-space: pre-wrap; user-select: all; }

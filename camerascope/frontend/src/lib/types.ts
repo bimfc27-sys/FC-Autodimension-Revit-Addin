@@ -28,7 +28,7 @@ export interface PublicCamera {
   saved: boolean;
 }
 
-export type Protocol = "rtsp" | "onvif" | "webrtc" | "hls" | "mjpeg" | "vendor_api";
+export type Protocol = "rtsp" | "onvif" | "webrtc" | "hls" | "mjpeg" | "vendor_api" | "snapshot";
 export type Vendor = "generic" | "axis" | "hikvision" | "dahua" | "amcrest" | "reolink";
 
 export interface CameraConfig {
@@ -45,7 +45,7 @@ export interface CameraConfig {
   snapshot_allowed?: boolean;
 }
 
-export type CameraStatus = "online" | "offline" | "auth_failed" | "gateway_offline" | "unknown";
+export type CameraStatus = "online" | "offline" | "auth_failed" | "gateway_offline" | "not_internet_reachable" | "unknown";
 
 export interface Ref {
   id: string;
@@ -85,6 +85,11 @@ export interface PrivateCamera {
   last_error: string | null;
   last_checked_at: string | null;
   created_at: string;
+  /** Free Edition: whether (and how) video is available, with the reason when it is not */
+  video?: { available: boolean; mode: "snapshot" | "none"; refresh_seconds: number; verified_at: string | null; reason: string | null };
+  brand_label?: string;
+  model?: string | null;
+  serial?: string | null;
 }
 
 export interface Gateway {

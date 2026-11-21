@@ -17,7 +17,11 @@ const csp = [
   "object-src 'none'",
 ].join("; ");
 
-const nextConfig = {
+// NEXT_PUBLIC_EDITION=free builds a static export for Cloudflare Pages (Free Edition):
+// the API is served same-origin by Pages Functions and security headers come from _headers.
+const FREE = process.env.NEXT_PUBLIC_EDITION === "free";
+
+const nextConfig = FREE ? { output: "export", reactStrictMode: true, poweredByHeader: false, images: { unoptimized: true } } : {
   output: "standalone",
   reactStrictMode: true,
   poweredByHeader: false,

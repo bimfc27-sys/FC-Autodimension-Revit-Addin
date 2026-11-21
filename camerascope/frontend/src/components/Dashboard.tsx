@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import type { AnyCamera, CameraGroup, Device, Gateway, PrivateCamera, PublicCamera, Site, User } from "@/lib/types";
 import AddCameraDialog from "./AddCameraDialog";
+import AddCameraFree from "./AddCameraFree";
+import { FREE } from "@/lib/edition";
 import CamerasPanel, { CameraRow } from "./CamerasPanel";
 import CameraTile from "./CameraTile";
 import DiagnosticsPanel from "./DiagnosticsPanel";
@@ -214,7 +216,7 @@ export default function Dashboard() {
   const diagCandidates = useMemo(() => {
     const m = new Map<string, AnyCamera>();
     [...tiles, ...cameras.filter((c) => c.is_owner), ...favorites, ...recent.map((r) => r.camera)]
-      .filter((c) => c.kind === "public" || c.is_owner)
+      .filter((c) => (c.kind === "public" && !FREE) || (c.kind === "private" && c.is_owner))
       .forEach((c) => m.set(key(c), c));
     return [...m.values()];
   }, [tiles, cameras, favorites, recent]);
@@ -280,7 +282,7 @@ export default function Dashboard() {
     <div className="app">
       <header className="topbar">
         <div className="brand"><div className="brand-logo">◉</div> CameraScope</div>
-        <span className="legend-badges"><span className="badge private">Your cameras</span><span className="badge public">Public feeds</span></span>
+        <span className="legend-badges"><span className="badge private">Your cameras</span><span className="badge public">Public feeds</span>{FREE && <span className="badge neutral">Free Edition</span>}</span>
         <div className="spacer" />
         {offlineGw > 0 && <button className="badge neutral" style={{ color: "#fca5a5", cursor: "pointer" }} onClick={() => setView("manage")}>⚠ {offlineGw} gateway offline</button>}
         <span className="muted small ellipsis" style={{ maxWidth: 140 }}>{user.display_name}</span>
@@ -365,7 +367,10 @@ export default function Dashboard() {
         ))}
       </nav>
 
-      {showAdd && (
+      {showAdd && FREE && (
+        <AddCameraFree sites={sites} onClose={() => setShowAdd(false)} onCreated={(cam) => { setShowAdd(false); loadAll(); if (cam.video?.available) open(cam); }} />
+      )}
+      {showAdd && !FREE && (
         <AddCameraDialog
           defaultLocation={userLoc}
           gateways={gateways}
