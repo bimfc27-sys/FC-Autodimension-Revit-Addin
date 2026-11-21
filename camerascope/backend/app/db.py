@@ -36,7 +36,7 @@ async def get_db() -> AsyncIterator[AsyncSession]:
 
 
 async def init_db() -> None:
-    from . import models  # noqa: F401  (register tables)
+    """Bring the schema up to date with Alembic migrations."""
+    from .migrate import upgrade
 
-    async with engine().begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    await upgrade()

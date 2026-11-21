@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
 from ..deps import current_user, optional_user
-from ..models import PublicCamera, SavedCamera, User
+from ..models import Favorite, PublicCamera, User
 from ..schemas import Playback, PublicCameraOut, QualityOption
 from ..services import cameras as svc
 from ..services import mediamtx, netguard
@@ -28,7 +28,7 @@ MAX_IMAGE_BYTES = 6 * 1024 * 1024
 async def _saved_ids(db: AsyncSession, user: User | None) -> set[uuid.UUID]:
     if not user:
         return set()
-    return set((await db.scalars(select(SavedCamera.public_camera_id).where(SavedCamera.user_id == user.id))).all())
+    return set((await db.scalars(select(Favorite.camera_id).where(Favorite.user_id == user.id, Favorite.camera_kind == "public"))).all())
 
 
 def _out(cam: PublicCamera, saved: set[uuid.UUID], dist: float | None = None) -> PublicCameraOut:

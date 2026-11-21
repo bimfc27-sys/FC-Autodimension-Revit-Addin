@@ -19,6 +19,7 @@ from ..db import get_db
 from ..deps import current_user
 from ..models import PrivateCamera, PublicCamera, User
 from ..services import mediamtx
+from ..services.cameras import can_view
 
 router = APIRouter(prefix="/api/media", tags=["media gateway"])
 _FILE_RE = re.compile(r"^[A-Za-z0-9_\-./]{1,200}$")
@@ -32,7 +33,7 @@ async def authorize_path(db: AsyncSession, user: User, path: str) -> None:
     kind, cam_id, _ = parsed
     if kind == "private":
         cam = await db.get(PrivateCamera, cam_id)
-        if not cam or cam.owner_id != user.id:
+        if not cam or not await can_view(db, user, cam):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown stream")
     else:
         cam = await db.get(PublicCamera, cam_id)

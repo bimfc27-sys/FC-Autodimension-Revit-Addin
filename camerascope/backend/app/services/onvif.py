@@ -9,10 +9,11 @@ import base64
 import hashlib
 import os
 import xml.etree.ElementTree as ET
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from .http import guarded_request, make_client
+from .http import build_auth, guarded_request, make_client
 
 NS = {
     "s": "http://www.w3.org/2003/05/soap-envelope",
@@ -33,6 +34,7 @@ class OnvifError(Exception):
 class OnvifProfile:
     token: str
     name: str
+    source_token: str | None = None  # video source = physical camera / NVR channel
     encoding: str | None = None
     width: int | None = None
     height: int | None = None
@@ -73,26 +75,49 @@ def _security_header(username: str, password: str) -> str:
 
 
 class OnvifClient:
-    def __init__(self, host: str, port: int, username: str, password: str, use_tls: bool = False):
+    """``url_map`` turns a device-facing URL into one the cloud can reach (identity for
+    direct cameras, a tunnel forwarder for gateway cameras). Device-reported URLs are
+    always pinned to the configured host first, so a device can't redirect us elsewhere."""
+
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        username: str,
+        password: str,
+        use_tls: bool = False,
+        url_map: Callable[[str], Awaitable[str]] | None = None,
+        trusted: bool = False,
+    ):
         scheme = "https" if use_tls else "http"
+        self.host = host
         h = f"[{host}]" if ":" in host else host
         self.device_url = f"{scheme}://{h}:{port}/onvif/device_service"
         self.username = username
         self.password = password
+        self.url_map = url_map
+        self.trusted = trusted
 
     async def _call(self, url: str, body: str) -> ET.Element:
+        from .sources import pin_host
+
+        url = pin_host(url, self.host)
+        if self.url_map:
+            url = await self.url_map(url)
         envelope = (
             f'<?xml version="1.0" encoding="UTF-8"?><s:Envelope xmlns:s="{NS["s"]}" '
             f'xmlns:tds="{NS["tds"]}" xmlns:trt="{NS["trt"]}" xmlns:tt="{NS["tt"]}">'
             f"{_security_header(self.username, self.password)}<s:Body>{body}</s:Body></s:Envelope>"
         )
-        async with make_client() as client:
+        async with make_client(verify=not self.trusted) as client:
             resp = await guarded_request(
                 client,
                 "POST",
                 url,
                 content=envelope.encode(),
                 headers={"Content-Type": "application/soap+xml; charset=utf-8"},
+                auth=build_auth(self.username, self.password),
+                trusted=self.trusted,
             )
         if len(resp.content) > MAX_RESPONSE:
             raise OnvifError("ONVIF response too large")
@@ -132,10 +157,11 @@ class OnvifClient:
         for p in root.findall(".//trt:Profiles", NS):
             token = p.get("token", "")
             name = p.findtext("tt:Name", default=token, namespaces=NS)
+            src = p.findtext(".//tt:VideoSourceConfiguration/tt:SourceToken", namespaces=NS)
             enc = p.findtext(".//tt:VideoEncoderConfiguration/tt:Encoding", namespaces=NS)
             w = p.findtext(".//tt:VideoEncoderConfiguration/tt:Resolution/tt:Width", namespaces=NS)
             h = p.findtext(".//tt:VideoEncoderConfiguration/tt:Resolution/tt:Height", namespaces=NS)
-            out.append(OnvifProfile(token, name, enc, int(w) if w else None, int(h) if h else None))
+            out.append(OnvifProfile(token, name, (src or "").strip() or None, enc, int(w) if w else None, int(h) if h else None))
         return out
 
     async def get_stream_uri(self, media_url: str, token: str) -> str:
@@ -148,7 +174,7 @@ class OnvifClient:
         uri = root.findtext(".//tt:Uri", namespaces=NS)
         if not uri:
             raise OnvifError("Device returned no stream URI")
-        return uri.strip()
+        return pin_host_keep(uri.strip(), self.host)
 
     async def get_snapshot_uri(self, media_url: str, token: str) -> str | None:
         try:
@@ -160,7 +186,7 @@ class OnvifClient:
                 raise
             return None
         uri = root.findtext(".//tt:Uri", namespaces=NS)
-        return uri.strip() if uri else None
+        return pin_host_keep(uri.strip(), self.host) if uri else None
 
     async def discover(self) -> OnvifDevice:
         dev = OnvifDevice()
@@ -172,7 +198,7 @@ class OnvifClient:
         )
         dev.media_xaddr = await self.get_media_xaddr()
         dev.profiles = await self.get_profiles(dev.media_xaddr)
-        for p in dev.profiles[:6]:
+        for p in dev.profiles[:64]:
             try:
                 p.stream_uri = await self.get_stream_uri(dev.media_xaddr, p.token)
             except OnvifError as exc:
@@ -184,3 +210,33 @@ class OnvifClient:
 
 def _xml_text(v: str) -> str:
     return v.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def pin_host_keep(url: str, host: str) -> str:
+    from .sources import pin_host, strip_userinfo
+
+    return strip_userinfo(pin_host(url, host))
+
+
+@dataclass
+class OnvifChannel:
+    """Profiles grouped by video source: one entry per camera / NVR channel."""
+
+    index: int
+    source_token: str | None
+    name: str
+    main: OnvifProfile
+    sub: OnvifProfile | None
+
+
+def group_channels(profiles: list[OnvifProfile]) -> list[OnvifChannel]:
+    groups: dict[str, list[OnvifProfile]] = {}
+    for p in profiles:
+        groups.setdefault(p.source_token or p.token, []).append(p)
+    out = []
+    for i, (src, ps) in enumerate(groups.items(), start=1):
+        ps = sorted(ps, key=lambda p: (p.width or 0) * (p.height or 0), reverse=True)
+        main = ps[0]
+        sub = ps[-1] if len(ps) > 1 else None
+        out.append(OnvifChannel(i, src if src != main.token else None, f"Channel {i}", main, sub))
+    return out

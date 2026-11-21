@@ -1,0 +1,36 @@
+# MediaMTX on the Local Camera Gateway (v1.9.x schema).
+# Pulls cameras/NVR channels on the LAN on demand. Paths are configured by the
+# CameraScope agent (which validates every source against ALLOWED_SUBNETS).
+# Its RTSP server is reached ONLY by the agent, which relays it to the cloud
+# through the encrypted tunnel. No port of this container is published.
+logLevel: info
+logDestinations: [stdout]
+
+api: yes
+apiAddress: :9997
+metrics: no
+pprof: no
+playback: no
+
+rtsp: yes
+rtspAddress: :8554
+protocols: [tcp]
+rtmp: no
+hls: no
+webrtc: no
+srt: no
+
+# Every read is authorised by the agent: only the relay account may read, nobody may publish.
+authMethod: http
+authHTTPAddress: http://agent:9123/auth
+authHTTPExclude:
+  - action: api
+  - action: metrics
+  - action: pprof
+
+pathDefaults:
+  sourceOnDemand: yes
+  sourceOnDemandStartTimeout: 15s
+  sourceOnDemandCloseAfter: 20s
+
+paths: {}

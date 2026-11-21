@@ -119,7 +119,10 @@ def snapshot_source(cam: PrivateCamera) -> str | None:
     # For RTSP/vendor cameras the HTTP API usually lives on the default web port.
     host = f"[{cam.host}]" if ":" in cam.host else cam.host
     scheme = "https" if cam.use_tls else "http"
-    web_base = f"{scheme}://{host}" + ("" if cam.protocol in ("rtsp", "vendor_api") else f":{cam.port or http_port}")
+    if cfg.get("http_port"):
+        web_base = f"{scheme}://{host}:{int(cfg['http_port'])}"
+    else:
+        web_base = f"{scheme}://{host}" + ("" if cam.protocol in ("rtsp", "vendor_api") else f":{cam.port or http_port}")
     if cfg.get("snapshot_path"):
         return web_base + cfg["snapshot_path"]
     preset = VENDOR_PRESETS.get(cam.vendor, {})

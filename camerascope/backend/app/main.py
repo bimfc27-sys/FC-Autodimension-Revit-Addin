@@ -10,7 +10,8 @@ from fastapi.responses import JSONResponse
 
 from .config import get_settings
 from .db import init_db
-from .routers import auth, library, media, private, public
+from .routers import auth, devices, gateways, library, media, organize, private, public
+from .services.cameras import status_monitor
 from .services.providers.runner import periodic_sync
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -21,13 +22,13 @@ log = logging.getLogger("camerascope")
 async def lifespan(app: FastAPI):
     await init_db()
     stop = asyncio.Event()
-    task = None
+    tasks = []
     if get_settings().environment != "test":
-        task = asyncio.create_task(periodic_sync(stop))
+        tasks = [asyncio.create_task(periodic_sync(stop)), asyncio.create_task(status_monitor(stop))]
     yield
     stop.set()
-    if task:
-        task.cancel()
+    for t in tasks:
+        t.cancel()
 
 
 settings = get_settings()
@@ -69,5 +70,5 @@ async def security_middleware(request: Request, call_next):
     return response
 
 
-for r in (auth.router, public.router, private.router, media.router, library.router):
+for r in (auth.router, public.router, private.router, devices.router, gateways.router, organize.router, media.router, library.router):
     app.include_router(r)

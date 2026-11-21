@@ -53,15 +53,22 @@ async def _read_response(reader: asyncio.StreamReader) -> tuple[int, dict, str]:
     return int(m.group(1)), headers, body
 
 
-async def probe(url: str, username: str = "", password: str = "", timeout: float = 8.0) -> RtspResult:
+async def probe(
+    url: str, username: str = "", password: str = "", timeout: float = 8.0, connect_to: tuple[str, int] | None = None
+) -> RtspResult:
+    """Probe ``url``. ``connect_to`` (a gateway tunnel forwarder) overrides the TCP
+    destination; the camera-facing URL in requests stays the LAN URL."""
     parts = urlsplit(url)
     scheme = parts.scheme.lower()
     if scheme not in ("rtsp", "rtsps"):
         return RtspResult(False, None, "not an rtsp:// URL")
     port = parts.port or DEFAULT_PORTS[scheme]
-    target = await check_host(parts.hostname or "", port)
-    # Connect to the validated IP, not the name, to avoid DNS-rebinding between check and use.
-    ip = target.addresses[0]
+    if connect_to:
+        ip, port_c = connect_to
+    else:
+        target = await check_host(parts.hostname or "", port)
+        # Connect to the validated IP, not the name, to avoid DNS-rebinding between check and use.
+        ip, port_c = target.addresses[0], port
     clean_uri = f"{scheme}://{parts.hostname}{':' + str(parts.port) if parts.port else ''}{parts.path or '/'}"
     if parts.query:
         clean_uri += "?" + parts.query
@@ -72,7 +79,7 @@ async def probe(url: str, username: str = "", password: str = "", timeout: float
         ctx.verify_mode = ssl.CERT_NONE  # cameras overwhelmingly use self-signed certs
     try:
         reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(ip, port, ssl=ctx, server_hostname=parts.hostname if ctx else None),
+            asyncio.open_connection(ip, port_c, ssl=ctx, server_hostname=parts.hostname if ctx else None),
             timeout,
         )
     except (OSError, asyncio.TimeoutError) as exc:

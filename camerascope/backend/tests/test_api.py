@@ -187,8 +187,8 @@ async def test_rtsp_probe_and_lockout(client, allow_loopback):
         good = (await client.post("/api/cameras", json=dict(CAM, host="127.0.0.1", port=port))).json()
         r = await client.post("/api/diagnostics", json={"camera_kind": "private", "camera_id": good["id"]})
         steps = {s["name"]: s for s in r.json()["steps"]}
-        assert steps["RTSP handshake"]["ok"], steps
-        assert "H264" in steps["RTSP handshake"]["detail"]
+        assert steps["RTSP stream handshake"]["ok"], steps
+        assert "H264" in steps["RTSP stream handshake"]["detail"]
         assert (await client.get(f"/api/cameras/{good['id']}")).json()["status"] in ("online", "offline")
 
         bad = dict(CAM, host="127.0.0.1", port=port, credentials={"username": "viewer", "password": "wrong"})
@@ -206,7 +206,8 @@ async def test_rtsp_probe_and_lockout(client, allow_loopback):
         assert (await client.get(f"/api/cameras/{badcam['id']}/playback")).status_code == 423
         # owner supplies new credentials -> unlocked
         r = await client.patch(f"/api/cameras/{badcam['id']}", json={"credentials": {"username": "viewer", "password": "Cam-Secret-123"}})
-        assert r.status_code == 200 and r.json()["status"] == "unknown"
+        assert r.status_code == 200 and r.json()["status"] in ("unknown", "online")
+        assert (await client.post("/api/diagnostics", json={"camera_kind": "private", "camera_id": badcam["id"]})).status_code == 200
     finally:
         server.close()
 

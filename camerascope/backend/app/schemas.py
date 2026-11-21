@@ -136,6 +136,9 @@ class PrivateCameraIn(BaseModel):
     credentials: Credentials | None = None
     latitude: float | None = Field(None, ge=-90, le=90)
     longitude: float | None = Field(None, ge=-180, le=180)
+    # Which Local Camera Gateway reaches this camera (None = directly from the cloud / VPN).
+    gateway_id: uuid.UUID | None = None
+    site_id: uuid.UUID | None = None
     authorization_basis: Literal["owner", "authorized_user"]
     # Explicit attestation is mandatory; the API refuses to store a camera without it.
     authorization_attested: bool
@@ -164,6 +167,8 @@ class PrivateCameraUpdate(BaseModel):
     credentials: Credentials | None = None
     latitude: float | None = Field(None, ge=-90, le=90)
     longitude: float | None = Field(None, ge=-180, le=180)
+    gateway_id: uuid.UUID | None = None
+    site_id: uuid.UUID | None = None
 
     @field_validator("host")
     @classmethod
@@ -171,25 +176,47 @@ class PrivateCameraUpdate(BaseModel):
         return None if v is None else _valid_host(v)
 
 
+class GatewayRef(BaseModel):
+    id: uuid.UUID
+    name: str
+    online: bool
+
+
+class Ref(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
 class PrivateCameraOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    """Never contains passwords or full stream URLs. Connection details (host, paths)
+    are returned only to the camera's owner; shared viewers see name/status only."""
+
     kind: Literal["private"] = "private"
     id: uuid.UUID
     name: str
     description: str | None
     protocol: str
     vendor: str
-    host: str
-    port: int | None
-    use_tls: bool
-    config: dict
+    is_owner: bool = True
+    access: Literal["owner", "shared"] = "owner"
+    host: str | None = None
+    port: int | None = None
+    use_tls: bool = False
+    config: dict = {}
     latitude: float | None
     longitude: float | None
     has_credentials: bool
     username: str | None = None  # shown so the owner knows which account is used; password never returned
     authorization_basis: str
     authorization_attested_at: datetime
+    # online | offline | auth_failed | gateway_offline | unknown
     status: str
+    connection: Literal["gateway", "cloud"] = "cloud"
+    gateway: GatewayRef | None = None
+    device: Ref | None = None
+    site: Ref | None = None
+    channel: int | None = None
+    reachable_checked_at: datetime | None = None
     last_error: str | None
     last_checked_at: datetime | None
     created_at: datetime
@@ -200,6 +227,7 @@ class OnvifProbeIn(BaseModel):
     port: int = Field(80, ge=1, le=65535)
     use_tls: bool = False
     credentials: Credentials
+    gateway_id: uuid.UUID | None = None
     authorization_attested: bool
 
     @field_validator("host")

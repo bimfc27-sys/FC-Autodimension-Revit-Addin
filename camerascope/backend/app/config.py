@@ -44,6 +44,16 @@ class Settings(BaseSettings):
     mediamtx_hls_url: str = "http://localhost:8888"
     mediamtx_webrtc_url: str = "http://localhost:8889"
 
+    # --- Local Camera Gateway tunnel --------------------------------------
+    # Where tunnel forwarders listen (0.0.0.0 inside Docker; the port range is
+    # never published) and who may connect to them (the cloud MediaMTX).
+    tunnel_bind_host: str = "127.0.0.1"
+    tunnel_allowed_peers: str = ""
+    # Address the cloud MediaMTX uses to reach the backend's forwarders.
+    backend_internal_host: str = "127.0.0.1"
+    enrollment_ttl_minutes: int = 30
+    status_check_interval_seconds: int = 60
+
     # --- Public camera providers -----------------------------------------
     providers_enabled: str = "seed,caltrans,nyc_dot,osm"
     caltrans_districts: str = "3,4,7,11,12"

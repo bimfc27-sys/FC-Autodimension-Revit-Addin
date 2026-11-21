@@ -21,9 +21,14 @@ from app.services.ratelimit import limiter  # noqa: E402
 async def _schema():
     from app import models  # noqa: F401
 
+    from sqlalchemy import text
+
+    from app.migrate import upgrade
+
     async with engine().begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text("DROP SCHEMA public CASCADE"))
+        await conn.execute(text("CREATE SCHEMA public"))
+    await upgrade()  # the real Alembic migrations
     yield
     await engine().dispose()
 

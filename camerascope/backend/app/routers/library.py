@@ -10,14 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
 from ..deps import admin_user, audit, current_user
-from ..models import DiagnosticRun, PrivateCamera, ProviderSync, PublicCamera, SavedCamera, User, ViewHistory
+from ..models import DiagnosticRun, Favorite, PrivateCamera, ProviderSync, PublicCamera, User, ViewHistory
 from ..schemas import DiagnosticsIn, DiagnosticsOut, HistoryIn, PublicCameraOut
 from ..services import cameras as svc
 from ..services import mediamtx
 from ..services.providers.runner import sync_provider
 from ..services.providers.sources import ALL_PROVIDERS
 from ..services.ratelimit import limiter
-from .private import _out as private_out
+from .private import camera_out
 
 router = APIRouter(prefix="/api", tags=["library"])
 
@@ -30,9 +30,9 @@ async def list_saved(db: AsyncSession = Depends(get_db), user: User = Depends(cu
     rows = (
         await db.scalars(
             select(PublicCamera)
-            .join(SavedCamera, SavedCamera.public_camera_id == PublicCamera.id)
-            .where(SavedCamera.user_id == user.id)
-            .order_by(SavedCamera.created_at.desc())
+            .join(Favorite, Favorite.camera_id == PublicCamera.id)
+            .where(Favorite.user_id == user.id, Favorite.camera_kind == "public")
+            .order_by(Favorite.created_at.desc())
         )
     ).all()
     out = []
@@ -47,14 +47,14 @@ async def list_saved(db: AsyncSession = Depends(get_db), user: User = Depends(cu
 async def save(camera_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(current_user)):
     if not await db.get(PublicCamera, camera_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Camera not found")
-    if not await db.get(SavedCamera, (user.id, camera_id)):
-        db.add(SavedCamera(user_id=user.id, public_camera_id=camera_id))
+    if not await db.get(Favorite, (user.id, "public", camera_id)):
+        db.add(Favorite(user_id=user.id, camera_kind="public", camera_id=camera_id))
         await db.commit()
 
 
 @router.delete("/saved/{camera_id}", status_code=204)
 async def unsave(camera_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(current_user)):
-    await db.execute(delete(SavedCamera).where(SavedCamera.user_id == user.id, SavedCamera.public_camera_id == camera_id))
+    await db.execute(delete(Favorite).where(Favorite.user_id == user.id, Favorite.camera_kind == "public", Favorite.camera_id == camera_id))
     await db.commit()
 
 
@@ -64,7 +64,7 @@ async def unsave(camera_id: uuid.UUID, db: AsyncSession = Depends(get_db), user:
 @router.post("/history", status_code=204)
 async def add_history(body: HistoryIn, db: AsyncSession = Depends(get_db), user: User = Depends(current_user)):
     if body.camera_kind == "private":
-        await svc.get_owned_camera(db, user, body.camera_id)
+        await svc.get_viewable_camera(db, user, body.camera_id)
     elif not await db.get(PublicCamera, body.camera_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Camera not found")
     db.add(ViewHistory(user_id=user.id, camera_kind=body.camera_kind, camera_id=body.camera_id))
@@ -93,8 +93,8 @@ async def history(db: AsyncSession = Depends(get_db), user: User = Depends(curre
                 out.append({"viewed_at": at, "camera": PublicCameraOut.model_validate(cam).model_dump(mode="json")})
         else:
             cam = await db.get(PrivateCamera, cid)
-            if cam and cam.owner_id == user.id:
-                out.append({"viewed_at": at, "camera": private_out(cam).model_dump(mode="json")})
+            if cam and await svc.can_view(db, user, cam):
+                out.append({"viewed_at": at, "camera": (await camera_out(db, cam, user)).model_dump(mode="json")})
     return out
 
 
@@ -114,7 +114,7 @@ async def run_diagnostics(body: DiagnosticsIn, request: Request, db: AsyncSessio
         cam = await svc.get_owned_camera(db, user, body.camera_id)
         svc.ensure_not_locked(cam)
         limiter.hit(f"diag-cam:{cam.id}", 4, 300)
-        ok, steps, auth_failed = await svc.diagnose_private(cam)
+        ok, steps, auth_failed = await svc.diagnose_private(db, cam)
         failed = next((s for s in steps if not s.ok), None)
         svc.record_result(cam, ok, failed.detail if failed else None, auth_failed)
     else:

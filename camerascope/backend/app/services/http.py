@@ -13,12 +13,13 @@ USER_AGENT = "CameraScope/1.0 (+https://github.com/; public-camera viewer)"
 MAX_REDIRECTS = 3
 
 
-def make_client(timeout: float | None = None) -> httpx.AsyncClient:
+def make_client(timeout: float | None = None, verify: bool = True) -> httpx.AsyncClient:
     return httpx.AsyncClient(
         timeout=timeout or get_settings().outbound_timeout_seconds,
         follow_redirects=False,
         headers={"User-Agent": USER_AGENT},
         trust_env=False,  # never let env proxies redirect user-controlled traffic
+        verify=verify,
     )
 
 
@@ -38,10 +39,16 @@ async def guarded_request(
     *,
     auth: httpx.Auth | None = None,
     stream: bool = False,
+    trusted: bool = False,
     **kwargs,
 ) -> httpx.Response:
+    """``trusted`` is set only for URLs that point at a gateway tunnel forwarder:
+    the destination was already validated against the gateway's local allow-list."""
     for _ in range(MAX_REDIRECTS + 1):
-        await check_url(url)
+        if not trusted:
+            await check_url(url)
+        elif _ > 0:
+            raise httpx.TooManyRedirects("redirects are not followed through a gateway tunnel", request=req)
         req = client.build_request(method, url, **kwargs)
         resp = await client.send(req, auth=auth, stream=stream)
         if resp.is_redirect and "location" in resp.headers:
@@ -57,10 +64,12 @@ async def guarded_request(
 
 
 @asynccontextmanager
-async def guarded_stream(method: str, url: str, *, auth: httpx.Auth | None = None, timeout: float | None = None):
-    client = make_client(timeout)
+async def guarded_stream(
+    method: str, url: str, *, auth: httpx.Auth | None = None, timeout: float | None = None, trusted: bool = False
+):
+    client = make_client(timeout, verify=not trusted)
     try:
-        resp = await guarded_request(client, method, url, auth=auth, stream=True)
+        resp = await guarded_request(client, method, url, auth=auth, stream=True, trusted=trusted)
         try:
             yield resp
         finally:
