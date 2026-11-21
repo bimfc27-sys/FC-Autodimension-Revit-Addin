@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { brand } from "./brands";
 import { type CameraRow, cameraOut, verifyCamera, saveDiagnostics } from "./cameras";
-import { type AppEnv, type Env, type User, allowPrivate, audit, body, fail, host as hostV, int, now, rateLimit, requireUser, str, uuid } from "./core";
+import { type AppEnv, type Env, type User, allowPrivate, audit, body, credentialKey, fail, host as hostV, int, now, rateLimit, requireUser, str, uuid } from "./core";
 import { open, seal } from "./crypto";
 import { cameraGet } from "./net";
 
@@ -53,7 +53,7 @@ devices.post("/", async (c) => {
   }
   const id = uuid(), t = now();
   const cr = (b.credentials ?? {}) as Record<string, unknown>;
-  const s = await seal(c.env.CREDENTIAL_KEY, { username: str(cr.username, "username", { max: 128, required: false }), password: String(cr.password ?? "").slice(0, 256) }, id, user.id);
+  const s = await seal(await credentialKey(c.env), { username: str(cr.username, "username", { max: 128, required: false }), password: String(cr.password ?? "").slice(0, 256) }, id, user.id);
   const d: DeviceRow = {
     id, owner_id: user.id, site_id: siteId, name: str(b.name, "name", { min: 1, max: 200 }), brand: br.id,
     model: str(b.model, "model", { max: 120, required: false }) || null, serial: str(b.serial, "serial", { max: 120, required: false }) || null,
@@ -77,7 +77,7 @@ devices.patch("/:id", async (c) => {
   if (b.name) await c.env.DB.prepare("UPDATE devices SET name = ? WHERE id = ?").bind(str(b.name, "name", { min: 1, max: 200 }), d.id).run();
   if (b.credentials && typeof b.credentials === "object") {
     const cr = b.credentials as Record<string, unknown>;
-    const s = await seal(c.env.CREDENTIAL_KEY, { username: str(cr.username, "username", { max: 128, required: false }), password: String(cr.password ?? "").slice(0, 256) }, d.id, d.owner_id);
+    const s = await seal(await credentialKey(c.env), { username: str(cr.username, "username", { max: 128, required: false }), password: String(cr.password ?? "").slice(0, 256) }, d.id, d.owner_id);
     await c.env.DB.batch([
       c.env.DB.prepare("UPDATE devices SET creds_ct=?, creds_iv=?, creds_key_id=?, auth_failures=0, status='unknown' WHERE id=?").bind(s.ct, s.iv, s.kid, d.id),
       c.env.DB.prepare("UPDATE cameras SET auth_failures=0, status='unknown', video_mode='none', video_reason='Recorder credentials changed: run diagnostics to verify again.' WHERE device_id=?").bind(d.id),
@@ -103,7 +103,7 @@ devices.post("/:id/discover", async (c) => {
   const br = brand(d.brand);
   if (!br.channelDiscovery) fail(409, `${br.label}: automatic channel discovery is not available. Add channels manually.`);
   if (d.auth_failures >= 3) fail(423, "The recorder rejected the stored credentials several times. Update them to unlock.");
-  const creds = await open<{ username: string; password: string }>(c.env.CREDENTIAL_KEY, { ct: d.creds_ct!, iv: d.creds_iv!, kid: d.creds_key_id! }, d.id, d.owner_id);
+  const creds = await open<{ username: string; password: string }>(await credentialKey(c.env), { ct: d.creds_ct!, iv: d.creds_iv!, kid: d.creds_key_id! }, d.id, d.owner_id);
   const get = (path: string) => cameraGet({ host: d.host, port: d.http_port, tls: !!d.use_tls, path, username: creds.username, password: creds.password, timeoutMs: 10000, maxBytes: 512 * 1024, allowPrivate: allowPrivate(c.env) });
   let chans: { index: number; name: string }[] = [];
   try {

@@ -472,12 +472,20 @@ function Accounts() {
 function Settings() {
   const [t, setT] = useState<Transport>("auto");
   const [server, setServer] = useState<string>("");
+  const [keySource, setKeySource] = useState<string>("");
   useEffect(() => {
     setT(getTransport());
-    api<{ streaming_mode: string }>("/api/client-config").then((c) => setServer(c.streaming_mode)).catch(() => {});
+    api<{ streaming_mode: string; credential_key_source?: string }>("/api/client-config").then((c) => { setServer(c.streaming_mode); setKeySource(c.credential_key_source ?? ""); }).catch(() => {});
   }, []);
   return (
     <>
+      {FREE && keySource === "database" && (
+        <div className="notice small">
+          Camera passwords are encrypted with a key stored in the database. For stronger protection, add a secret named
+          <strong> CREDENTIAL_KEY</strong> (any random text of 40+ characters) in Cloudflare Pages → Settings → Variables and Secrets
+          <em> before</em> adding cameras – cameras added earlier then need their password entered again.
+        </div>
+      )}
       {FREE && (
         <div className="card">
           <strong>CameraScope Free Edition</strong>

@@ -11,3 +11,4 @@ gateway/windows/*.log
 .dev.vars
 free-edition/.wrangler/
 free-edition/public/
+free-edition/wrangler.toml

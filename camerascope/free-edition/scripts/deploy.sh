@@ -27,6 +27,7 @@ if [ -z "$DB_ID" ]; then
   $WR d1 create "$DB" >/dev/null
   DB_ID=$(api "/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database?name=$DB" | python3 -c "import json,sys; print([d for d in json.load(sys.stdin)['result'] if d['name']=='$DB'][0]['uuid'])")
 fi
+cp -n wrangler.toml.example wrangler.toml 2>/dev/null || true
 sed -i.bak -E "s/^database_id = \"[^\"]*\"/database_id = \"$DB_ID\"/" wrangler.toml && rm -f wrangler.toml.bak
 sed -i.bak -E "s/^name = \"[^\"]*\"/name = \"$PROJECT\"/" wrangler.toml && rm -f wrangler.toml.bak
 echo "    database $DB_ID"

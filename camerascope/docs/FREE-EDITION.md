@@ -56,15 +56,38 @@ For each network with cameras:
    - create a **separate low-privilege user** on the camera for CameraScope
 4. If your internet provider uses CGNAT (no public IPv4 address), port-forwarding cannot work, and those cameras cannot be used with the Free Edition.
 
-## 4. iPhone-only setup
+## 4. iPhone-only setup (no token, no commands)
 
-**One time (owner):**
+Everything below is done in **Safari on your iPhone**. Cloudflare builds the app directly from this GitHub repository, so no API token is needed.
 
-1. Create a free Cloudflare account and an API token in Safari (see the deployment report below). The deployment itself is run for you from this repository.
-2. Open the `https://<project>.pages.dev` URL in Safari and **register**. The first account becomes the administrator, and self-registration closes afterwards.
-3. Tap **Share → Add to Home Screen**. CameraScope now opens full-screen like an app.
+**A. Put CameraScope on Cloudflare (about 10 minutes, once):**
 
-**Adding devices:**
+1. Open **dash.cloudflare.com** → **Sign up** (free; no payment method needed) → verify your e-mail.
+2. **Workers & Pages** → **Create** → **Pages** tab → **Connect to Git** → **GitHub**. Sign in to GitHub and allow Cloudflare to access the repository **FC-Autodimension-Revit-Addin**. Select it.
+3. Fill in the build settings:
+   - **Production branch:** `claude/camerascope-web-app-22fc1t`
+   - **Framework preset:** None
+   - **Build command:** `bash scripts/build-frontend.sh`
+   - **Build output directory:** `public`
+   - **Root directory** (under *Advanced*): `camerascope/free-edition`
+
+   Tap **Save and Deploy** and wait for the build to finish (2–4 minutes).
+4. **Storage & Databases** → **D1** → **Create database** → name it `camerascope` → Create.
+5. Back in your Pages project → **Settings** → **Bindings** → **Add** → **D1 database** → variable name **`DB`**, database `camerascope` → Save.
+6. *(Recommended)* **Settings** → **Variables and Secrets** → **Add**:
+   - type **Secret**, name **`CREDENTIAL_KEY`**
+   - value: any random text of 40+ characters (the iPhone *Passwords* app can generate one)
+   - Save
+7. **Deployments** → on the latest deployment, **⋯ → Retry deployment**. Bindings and secrets apply to new deployments only.
+8. Open **https://\<your-project\>.pages.dev**. The app creates its database tables by itself on first use.
+
+**B. First use:**
+
+1. **Register.** The first account becomes the administrator, and self-registration closes after that.
+2. **Share → Add to Home Screen.** CameraScope now opens full-screen like an app.
+3. If the login page says *"Setup incomplete"*, step A5 or A7 is missing.
+
+**C. Adding devices:**
 
 - **Cameras → + Add:**
   - choose the brand
@@ -73,10 +96,14 @@ For each network with cameras:
   - confirm that you are authorised
 
   CameraScope tests the camera immediately and shows each step.
-- **Manage → DVR / NVR → Add:** add the recorder, then *Discover channels* (Hikvision, Dahua) or *Enter manually*. Channels are tested as they are added.
+- **Manage → DVR / NVR → Add:** add the recorder, then *Discover channels* (Hikvision, Dahua) or *Enter manually*.
 - **Manage → Buildings:** share cameras with people. An administrator creates their logins under **Manage → Settings → Accounts**.
 
-**Everyday use:** Cameras → tap cameras (1, 4 or 9 tiles), ★ favorites, ＋ groups, 🩺 diagnostics.
+**Updates:** every push to the branch redeploys automatically.
+
+**If login fails with Cloudflare error 1102** (CPU limit), add a variable `PBKDF2_ITERATIONS` = `50000` and retry the deployment. The default of 100,000 PBKDF2 iterations has not yet been measured against the free-plan CPU limit in production.
+
+The command-line path (`scripts/deploy.sh` with an API token) still works for people who prefer it.
 
 ## 5. Security design
 
@@ -101,9 +128,9 @@ For each network with cameras:
 | Code: API, D1 schema, PWA, deploy script | ✅ Done, pushed to the branch |
 | Local verification on the real Workers runtime + local D1 | ✅ **40/40 API checks**, plus LAN-address rejection and persistence across restart |
 | Browser verification (Chromium, iPhone 13 emulation) | ✅ Login, list chips, 4 verified snapshot tiles refreshing, honest "No video" tile, PWA manifest, icons and service worker |
-| Cloudflare account and API token | ⚠️ Provided, but **Cloudflare rejects the saved value as a malformed Authorization header**. Deployment is blocked until a valid token is saved (see below). |
-| Production deployment and pages.dev URL | ⏳ Not yet. Runs `free-edition/scripts/deploy.sh` once the token works. |
+| Deployment without a token (Cloudflare GitHub integration, §4) | ✅ Supported. The app creates its tables on first use; there's a fallback encryption key when no secret is set; and there's a clear "Setup incomplete" message when the database isn't connected. Tested locally from an **empty** database with **no secret**: 40/40 checks pass. |
+| Production deployment and pages.dev URL | ⏳ Needs your free Cloudflare account (§4A). I cannot create accounts on your behalf. |
 | Production checks (authentication, D1 persistence, snapshot pipeline from Cloudflare's edge) | ⏳ After deployment, each verified separately |
 | Real iPhone Safari, real cameras | ⏳ Yours to try after deployment; Diagnostics explains any failure |
 
-**Fixing the token:** in Cloudflare open *My Profile → API Tokens*, then *Roll* (or create) a token with the **Account** permissions Cloudflare Pages *Edit*, D1 *Edit* and Account Settings *Read*. Copy **only** the token string, which is shown once and is about 40 characters: no "Bearer", no spaces. Save it again when asked, or in this cloud environment's settings under *Network secrets* for `api.cloudflare.com`.
+**Demo page:** a self-contained demo of this interface with simulated cameras is published as a private claude.ai artifact (link in the chat). It shows how the app behaves; it cannot contain your real cameras.

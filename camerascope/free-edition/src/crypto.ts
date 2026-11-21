@@ -73,9 +73,18 @@ export async function verifyPassword(password: string, stored: string | null, it
 // so encrypted credentials can't be copied onto another camera or user.
 
 async function aesKey(secret: string): Promise<{ kid: string; key: CryptoKey }> {
-  const [kid, k] = secret.includes(":") ? secret.split(":", 2) : ["k1", secret];
-  const raw = unb64(k);
-  if (raw.length !== 32) throw new Error("CREDENTIAL_KEY must be 32 bytes (base64)");
+  // Preferred format "kid:base64(32 bytes)". Any other text of 32+ characters is accepted too
+  // (easy to paste on a phone): the key is then SHA-256(text) and the id is derived from it.
+  if (secret.includes(":")) {
+    const [kid, k] = secret.split(":", 2);
+    try {
+      const raw = unb64(k);
+      if (raw.length === 32) return { kid, key: await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]) };
+    } catch { /* not base64: fall through */ }
+  }
+  if (secret.length < 32) throw new Error("CREDENTIAL_KEY must be at least 32 characters");
+  const raw = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(secret)));
+  const kid = "h" + (await sha256Hex("kid:" + secret)).slice(0, 8);
   return { kid, key: await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]) };
 }
 

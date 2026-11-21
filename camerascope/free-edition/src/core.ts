@@ -1,10 +1,11 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { randomToken, sha256Hex } from "./crypto";
+import { SCHEMA_SQL } from "./schema";
 
 export interface Env {
   DB: D1Database;
-  CREDENTIAL_KEY: string;
+  CREDENTIAL_KEY?: string;
   REGISTRATION_MODE?: string; // open | first_user_only | closed
   PBKDF2_ITERATIONS?: string;
   /** local development only: allow LAN targets (never set in production) */
@@ -40,6 +41,44 @@ export function iterations(env: Env): number {
 
 export function allowPrivate(env: Env): boolean {
   return env.ALLOW_PRIVATE_TARGETS === "true";
+}
+
+// ---------------------------------------------------------------- first-run setup
+
+let schemaReady = false;
+
+/** Creates the tables on first use, so no command line is needed (Cloudflare GitHub integration). */
+export async function ensureSchema(env: Env): Promise<void> {
+  if (schemaReady) return;
+  if (!env.DB) {
+    throw new HTTPException(503, { res: Response.json({ detail: "Setup incomplete: in Cloudflare Pages > Settings > Bindings, add a D1 database binding named DB, then redeploy.", setup: "missing_db" }, { status: 503 }) });
+  }
+  const have = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all<{ name: string }>();
+  const tables = new Set((have.results ?? []).map((r) => r.name));
+  const steps: [string, string][] = [["users", SCHEMA_SQL[0]], ["public_cameras_seeded", SCHEMA_SQL[1]], ["app_secrets", SCHEMA_SQL[2]]];
+  for (const [marker, sql] of steps) {
+    if (marker === "public_cameras_seeded") {
+      const n = tables.has("public_cameras") ? (await env.DB.prepare("SELECT COUNT(*) AS n FROM public_cameras WHERE provider = 'seed'").first<{ n: number }>())?.n ?? 0 : 0;
+      if (n > 0) continue;
+    } else if (tables.has(marker)) continue;
+    const stmts = sql.split(/;\s*\n/).map((s) => s.replace(/^\s*--.*$/gm, "").trim()).filter(Boolean);
+    await env.DB.batch(stmts.map((s) => env.DB.prepare(s)));
+  }
+  schemaReady = true;
+}
+
+let cachedKey: string | null = null;
+
+/** Credential encryption key: the CREDENTIAL_KEY secret, or (fallback) a random key kept in D1. */
+export async function credentialKey(env: Env): Promise<string> {
+  if (env.CREDENTIAL_KEY && env.CREDENTIAL_KEY.length >= 32) return env.CREDENTIAL_KEY;
+  if (cachedKey) return cachedKey;
+  const row = await env.DB.prepare("SELECT value FROM app_secrets WHERE name = 'credential_key'").first<{ value: string }>();
+  if (row) return (cachedKey = row.value);
+  const k = `d1:${btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))}`;
+  await env.DB.prepare("INSERT OR IGNORE INTO app_secrets (name, value, created_at) VALUES ('credential_key', ?, ?)").bind(k, now()).run();
+  const again = await env.DB.prepare("SELECT value FROM app_secrets WHERE name = 'credential_key'").first<{ value: string }>();
+  return (cachedKey = again!.value);
 }
 
 // ---------------------------------------------------------------- sessions

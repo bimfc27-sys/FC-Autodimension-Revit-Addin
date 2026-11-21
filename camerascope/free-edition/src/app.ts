@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { auth } from "./auth";
 import { cameras, diagnostics } from "./cameras";
-import { type AppEnv, csrfMiddleware, sessionMiddleware } from "./core";
+import { type AppEnv, csrfMiddleware, ensureSchema, sessionMiddleware } from "./core";
 import { devices } from "./devices";
 import { organize } from "./organize";
 import { publicCams } from "./public";
@@ -17,6 +17,10 @@ app.use("*", async (c, next) => {
   if (!c.res.headers.get("Cache-Control")) c.header("Cache-Control", "no-store");
 });
 app.use("*", csrfMiddleware);
+app.use("*", async (c, next) => {
+  await ensureSchema(c.env);
+  await next();
+});
 app.use("*", sessionMiddleware);
 
 app.get("/health", async (c) => {
@@ -25,7 +29,10 @@ app.get("/health", async (c) => {
 });
 
 // The Free Edition streams nothing through Cloudflare: snapshots only (see docs).
-app.get("/client-config", (c) => c.json({ edition: "free", streaming_mode: "hls", live_rtsp_video: false, gateways: false }));
+app.get("/client-config", (c) => c.json({
+  edition: "free", streaming_mode: "hls", live_rtsp_video: false, gateways: false,
+  credential_key_source: c.env.CREDENTIAL_KEY && c.env.CREDENTIAL_KEY.length >= 32 ? "secret" : "database",
+}));
 app.get("/gateways", (c) => c.json([])); // Local Camera Gateways exist only in the self-hosted / home-PC editions
 
 app.route("/auth", auth);

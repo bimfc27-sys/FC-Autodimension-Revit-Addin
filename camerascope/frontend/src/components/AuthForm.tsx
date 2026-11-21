@@ -13,9 +13,15 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [regOpen, setRegOpen] = useState<boolean | null>(null);
+  const [setupProblem, setSetupProblem] = useState<string | null>(null);
 
   useEffect(() => {
-    api<{ open: boolean }>("/api/auth/registration").then((r) => setRegOpen(r.open)).catch(() => setRegOpen(null));
+    api<{ open: boolean }>("/api/auth/registration")
+      .then((r) => setRegOpen(r.open))
+      .catch((e) => {
+        setRegOpen(null);
+        if ((e as { status?: number }).status === 503) setSetupProblem((e as Error).message);
+      });
   }, []);
 
   async function submit(e: FormEvent) {
@@ -67,6 +73,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           />
           {mode === "register" && <span className="small">At least 12 characters mixing 3 of: lower, upper, digits, symbols.</span>}
         </label>
+        {setupProblem && <div className="error">{setupProblem}</div>}
         {mode === "register" && regOpen === false && <div className="notice small">Self-registration is closed on this server. Ask the administrator to create your account.</div>}
         {error && <div className="error">{error}</div>}
         <button className="btn primary" disabled={busy}>

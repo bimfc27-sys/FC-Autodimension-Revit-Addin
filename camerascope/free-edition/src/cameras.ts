@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { BRANDS, brand, snapshotPathFor } from "./brands";
 import {
   type AppEnv, type Ctx, type Env, type User, allowPrivate, audit, body, fail, host as hostV, int, memLimit, now, path as pathV,
-  rateLimit, requireUser, str, uuid,
+  rateLimit, requireUser, str, uuid, credentialKey,
 } from "./core";
 import { open, seal } from "./crypto";
 import { TargetRejected, cameraGet, isImage, tcpCheck, unreachableReason } from "./net";
@@ -52,7 +52,7 @@ async function credentials(env: Env, cam: CameraRow): Promise<Creds> {
     if (d) row = d;
   }
   if (!row.creds_ct || !row.creds_iv || !row.creds_key_id) return { username: "", password: "" };
-  return open<Creds>(env.CREDENTIAL_KEY, { ct: row.creds_ct, iv: row.creds_iv, kid: row.creds_key_id }, row.id, row.owner_id);
+  return open<Creds>(await credentialKey(env), { ct: row.creds_ct, iv: row.creds_iv, kid: row.creds_key_id }, row.id, row.owner_id);
 }
 
 // ------------------------------------------------------------------ output
@@ -277,7 +277,7 @@ cameras.post("/", async (c) => {
   const cr = (b.credentials ?? {}) as Record<string, unknown>;
   const u = str(cr.username, "username", { max: 128, required: false }), p = typeof cr.password === "string" ? cr.password.slice(0, 256) : "";
   if (u || p) {
-    const s = await seal(c.env.CREDENTIAL_KEY, { username: u, password: p }, id, user.id);
+    const s = await seal(await credentialKey(c.env), { username: u, password: p }, id, user.id);
     cam.creds_ct = s.ct; cam.creds_iv = s.iv; cam.creds_key_id = s.kid;
   }
   await c.env.DB.prepare(
@@ -324,7 +324,7 @@ cameras.patch("/:id", async (c) => {
   if ("brand" in b) { set("brand", brand(String(b.brand)).id); connectionChanged = true; }
   if (b.credentials && typeof b.credentials === "object") {
     const cr = b.credentials as Record<string, unknown>;
-    const s = await seal(c.env.CREDENTIAL_KEY, { username: str(cr.username, "username", { max: 128, required: false }), password: String(cr.password ?? "").slice(0, 256) }, cam.id, cam.owner_id);
+    const s = await seal(await credentialKey(c.env), { username: str(cr.username, "username", { max: 128, required: false }), password: String(cr.password ?? "").slice(0, 256) }, cam.id, cam.owner_id);
     set("creds_ct", s.ct); set("creds_iv", s.iv); set("creds_key_id", s.kid); set("auth_failures", 0);
     connectionChanged = true;
   }
